@@ -33,11 +33,21 @@ def _apply_auth_policy() -> None:
     log.info("auth: claude.ai login%s", f" (ignored {', '.join(present)})" if present else "")
 
 
-def _make_audio():
-    if settings.audio_transport == "usb":
-        from smitty.audio.usb import UsbAudioSink, UsbAudioSource
+_local = None
 
-        return UsbAudioSource(), UsbAudioSink(volume=settings.volume)
+
+def _local_audio():
+    """The chooser between the reSpeaker and this Mac's own microphone and speakers (one per process)."""
+    global _local
+    if _local is None:
+        from smitty.voice import LocalAudio
+        _local = LocalAudio(settings)
+    return _local
+
+
+def _make_audio():
+    if settings.audio_transport in ("auto", "mac", "usb", "respeaker"):
+        return _local_audio().make()
     if settings.audio_transport in ("websocket", "ws", "wifi"):
         from smitty.audio.websocket import WebSocketAudio
 
@@ -185,20 +195,25 @@ async def cmd_say(text: str) -> None:
         await asyncio.sleep(0.1)
 
 
-def _systems(mode: str, brain, tts=None, leds=None, note: str = "") -> list[dict]:
+def _systems(mode: str, brain, tts=None, leds=None, note: str = "", mic_blocked: bool = False) -> list[dict]:
     """A plain-language list of Smitty's parts and whether each is in working order."""
     out = []
     if mode == "voice":
         wifi = settings.audio_transport in ("websocket", "ws", "wifi")
-        out.append({"name": "Microphone and speaker", "ok": True,
-                    "detail": "XIAO ESP32S3 over Wi-Fi" if wifi else "reSpeaker XVF3800 over USB"})
+        using = "XIAO ESP32S3 over Wi-Fi" if wifi else (_local_audio().label or "reSpeaker XVF3800 over USB")
+        if mic_blocked:
+            from smitty.voice import MIC_BLOCKED
+            out.append({"name": "Microphone and speaker", "ok": False, "detail": f"{using}: {MIC_BLOCKED}"})
+        else:
+            out.append({"name": "Microphone and speaker", "ok": True, "detail": using})
         out.append({"name": "Wake word", "ok": True,
                     "detail": f"{settings.wake_model.replace('_', ' ')}, threshold {settings.wake_threshold}, {settings.wake_verify} check"})
         out.append({"name": "Speech to text", "ok": True, "detail": settings.whisper_model.split("/")[-1] + " (local)"})
         if tts is not None:
             kokoro = type(tts).__name__ == "KokoroTTS"
             out.append({"name": "Voice", "ok": True, "detail": f"Kokoro {settings.kokoro_voice} (local)" if kokoro else "macOS say (fallback)"})
-        out.append({"name": "LED ring", "ok": leds is not None, "detail": ("through the ESP32" if wifi else "USB control") if leds else "off"})
+        if leds is not None or wifi or _local_audio().device != "mac":      # the Mac's own audio has no ring to report on
+            out.append({"name": "LED ring", "ok": leds is not None, "detail": ("through the ESP32" if wifi else "USB control") if leds else "off"})
     else:
         out.append({"name": "Mode", "ok": True, "detail": note or ("text only, no microphone or speaker: chat from the dashboard"
                     if mode == "text" else "text chat in the terminal, no audio")})
@@ -345,15 +360,17 @@ async def cmd_review(target: str, question: str, session: str | None, project: s
 
 
 async def cmd_run(brain_name: str) -> None:
-    """Always-on Smitty: chat, inbox and schedules run the whole time; voice joins when the reSpeaker
-    is plugged in and leaves when it is unplugged, in the same conversation."""
+    """Always-on Smitty: chat, inbox and schedules run the whole time; voice joins whenever there is a
+    microphone (the reSpeaker when it is plugged in, else the Mac's own) and leaves when it goes, in the
+    same conversation."""
     if brain_name == "echo":
         return await _cmd_run_fixed("echo")          # the speak-it-back test needs the microphone up front
     import signal
     from smitty import store
-    from smitty.voice import VoiceLink, usb_microphone
+    from smitty.voice import VoiceLink
 
     wifi = settings.audio_transport in ("websocket", "ws", "wifi")
+    local = None if wifi else _local_audio()
     att = _make_attention()
     brain = _make_claude_brain(att.confirm, att.notify, att)
     att.brain = brain
@@ -378,14 +395,16 @@ async def cmd_run(brain_name: str) -> None:
         return leds
 
     voice = VoiceLink(settings, brain, att, make_audio=_make_audio,
-                      microphone=(lambda: (True, "")) if wifi else usb_microphone,
+                      microphone=(lambda: (True, "")) if wifi else local.microphone,
                       make_pipeline=make_pipeline, make_leds=make_leds, watch_frames=not wifi,
-                      greeting=f"{settings.assistant_name} online.")
+                      greeting=f"{settings.assistant_name} online.",
+                      **({} if wifi else {"waiting": local.waiting, "better": local.better_available,
+                                          "label": lambda: local.label}))
     brain.volume.apply = voice.apply_volume
 
     def systems() -> list[dict]:
         if voice.attached:
-            return _systems("voice", brain, voice.pipeline.tts, voice.leds)
+            return _systems("voice", brain, voice.pipeline.tts, voice.leds, mic_blocked=voice.mic_blocked)
         return _systems("text", brain, note=voice.note)
 
     await brain.start()
@@ -401,11 +420,15 @@ async def cmd_run(brain_name: str) -> None:
     store.put("chat", {"busy": False})
     store.record("system", f"{settings.assistant_name} started", mode="auto", transport=settings.audio_transport)
     beat = asyncio.create_task(_heartbeat(lambda: voice.mode, brain, started, control=True, systems=systems,
-                                          extra=lambda: {"voice": voice.attached, "voice_note": voice.note, "auto_voice": True}))
+                                          extra=lambda: {"voice": voice.attached, "voice_note": voice.note, "auto_voice": True,
+                                                         "audio": voice.label() if voice.attached else "",
+                                                         "mic_blocked": voice.mic_blocked}))
     dash = await _start_dashboard() if settings.dashboard else None
     hub = _start_hub("auto")
     print(f"{settings.assistant_name} ready. Chat: http://127.0.0.1:{settings.dashboard_port}  "
-          f"Voice turns on when the reSpeaker is plugged in. Ctrl-C to stop.", flush=True)
+          + {"respeaker": "Voice turns on when the reSpeaker is plugged in.", "mac": "Voice uses this Mac's microphone and speakers.",
+             "auto": "Voice uses the reSpeaker when it is plugged in, else this Mac's microphone and speakers."}.get(
+                 local.mode if local else "", "Voice turns on when the Wi-Fi bridge connects.") + " Ctrl-C to stop.", flush=True)
     main_task = asyncio.current_task()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, main_task.cancel)
@@ -468,7 +491,7 @@ async def _cmd_run_fixed(brain_name: str) -> None:
         if link is not None:
             leds = LedStatus(WsLedRing(link, asyncio.get_running_loop()))
             link.on_ready.append(leds.reapply)         # re-show the state whenever the board reconnects
-        else:
+        elif getattr(source, "has_ring", True):        # the Mac's own microphone has no LED ring
             leds = LedStatus()
     # Load models before opening the audio streams so no mic audio piles up.
     pipeline = VoicePipeline(settings, source, sink, brain=brain, status=leds)
@@ -655,10 +678,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("devices", help="list audio devices")
     p_say = sub.add_parser("say", help="speak text through the sink")
     p_say.add_argument("text")
-    p_run = sub.add_parser("run", help="run Smitty: chat always, voice whenever the reSpeaker is plugged in")
+    p_run = sub.add_parser("run", help="run Smitty: chat always, voice on the reSpeaker when it is plugged in, else on this Mac's microphone and speakers")
     p_run.add_argument("--brain", default="claude", choices=["echo", "claude"])
     sub.add_parser("chat", help="talk to the brain in text (no audio)")
-    sub.add_parser("serve", help="run without audio, even if the reSpeaker is plugged in")
+    sub.add_parser("serve", help="run without audio: no microphone, no speaker")
     sub.add_parser("schedules", help="list scheduled tasks")
     p_dash = sub.add_parser("dashboard", help="serve the monitoring dashboard (http://127.0.0.1:8770)")
     p_dash.add_argument("--demo", action="store_true", help="show sample data instead of Smitty's real activity")

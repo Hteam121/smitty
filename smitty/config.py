@@ -47,7 +47,11 @@ def _env(name: str, default):
 @dataclass
 class Settings:
     # Audio
-    audio_transport: str = field(default_factory=lambda: _env("AUDIO", "usb"))  # usb | websocket
+    # auto = the reSpeaker when it is plugged in, else this Mac's own microphone and speakers;
+    # mac = always the Mac's own; respeaker (or usb) = only the reSpeaker; websocket = the Wi-Fi bridge.
+    audio_transport: str = field(default_factory=lambda: _env("AUDIO", "auto"))
+    mic: str = field(default_factory=lambda: _env("MIC", ""))          # Mac audio: part of a microphone's name; empty = built-in
+    speaker: str = field(default_factory=lambda: _env("SPEAKER", ""))  # Mac audio: part of a speaker's name; empty = the system's output
     volume: float = field(default_factory=lambda: _env("VOLUME", 0.5))  # master output gain, 0..1
     ws_host: str = "0.0.0.0"
     ws_port: int = field(default_factory=lambda: _env("WS_PORT", 8766))

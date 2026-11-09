@@ -1,8 +1,9 @@
 """Transport-agnostic audio interfaces.
 
-Two implementations are planned:
-  * ``smitty.audio.usb``        - reSpeaker XVF3800 plugged in over USB (now)
-  * ``smitty.audio.websocket``  - XIAO ESP32S3 streaming PCM over Wi-Fi (later)
+Two implementations:
+  * ``smitty.audio.usb``        - this Mac's sound devices: the reSpeaker XVF3800 over USB, or the
+                                  Mac's own microphone and speakers
+  * ``smitty.audio.websocket``  - XIAO ESP32S3 streaming PCM over Wi-Fi
 
 Contract shared by both:
   * Audio is 16 kHz, mono, signed 16-bit PCM, little-endian (what openWakeWord,

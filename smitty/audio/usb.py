@@ -1,10 +1,15 @@
-"""USB implementation of AudioSource / AudioSink using the reSpeaker XVF3800.
+"""AudioSource / AudioSink on this Mac's sound devices (PortAudio): the reSpeaker XVF3800 on
+its USB cable, or the Mac's own microphone and speakers.
 
 The XVF3800 (USB firmware) exposes a 2-in / 2-out, 16 kHz USB audio device.
 Input channel 0 is the processed signal (beamformed, AEC'd, noise-suppressed),
 which is what we feed to the pipeline. Output goes to the speaker wired to the
 board; the XVF3800 uses it as the echo-cancellation reference, which is why the
 mic AND the speaker must both go through this device.
+
+The Mac's own devices have no echo cancelling. That is fine because Smitty never listens
+while it speaks; the sink only waits a moment after each utterance (``settle_s``) so the
+tail of its own voice is not heard as the user's.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import queue
+import re
 import time
 from typing import AsyncIterator, Optional
 
@@ -30,6 +36,8 @@ from smitty.audio.base import (
 log = logging.getLogger(__name__)
 
 RESPEAKER_NAME = "reSpeaker XVF3800"
+# A microphone that is part of the Mac (or its display), as macOS names them.
+BUILT_IN_MIC = re.compile(r"(macbook|imac|built-?in|studio display).*microphone", re.I)
 
 
 def find_device(name_substring: str = RESPEAKER_NAME) -> Optional[int]:
@@ -38,6 +46,47 @@ def find_device(name_substring: str = RESPEAKER_NAME) -> Optional[int]:
         if name_substring.lower() in dev["name"].lower():
             return idx
     return None
+
+
+def _named(part: str, kind: str) -> Optional[int]:
+    """The first device whose name contains ``part`` and that can record ("input") or play ("output")."""
+    for idx, dev in enumerate(sd.query_devices()):
+        if part.lower() in dev["name"].lower() and dev[f"max_{kind}_channels"] > 0:
+            return idx
+    return None
+
+
+def _system_default(kind: str) -> Optional[int]:
+    try:
+        return int(sd.query_devices(kind=kind)["index"])
+    except Exception:
+        return None
+
+
+def mac_devices(mic: str = "", speaker: str = "") -> tuple[Optional[int], Optional[int]]:
+    """(microphone, speaker) to use when Smitty runs on the Mac's own audio; None where there is none.
+
+    ``mic`` / ``speaker`` insist on a device by part of its name. Left empty, the microphone is the one
+    built into the Mac when it has one, else the input chosen in System Settings > Sound: Smitty keeps
+    the microphone open the whole time, and an open microphone turns Bluetooth headphones to call
+    quality. The speaker is the output chosen in System Settings > Sound.
+    """
+    if mic:
+        m = _named(mic, "input")
+    else:
+        m = next((i for i, d in enumerate(sd.query_devices())
+                  if d["max_input_channels"] > 0 and BUILT_IN_MIC.search(d["name"])), None)
+        if m is None:
+            m = _system_default("input")
+    s = _named(speaker, "output") if speaker else _system_default("output")
+    return m, s
+
+
+def device_name(idx: Optional[int]) -> str:
+    try:
+        return str(sd.query_devices(idx)["name"]) if idx is not None else ""
+    except Exception:
+        return ""
 
 
 def describe_devices() -> str:
@@ -87,6 +136,9 @@ class UsbAudioSource(AudioSource):
         self._stream: sd.InputStream | None = None
         self._dropped = 0
         self.last_frame = time.monotonic()      # when audio last arrived; goes stale if the device is unplugged
+        self.started_at = 0.0
+        self.heard = False                      # any non-silent audio yet? Stays False when macOS withholds the microphone
+        self.has_ring = True                    # the reSpeaker's LED ring; False for the Mac's own microphone
 
     def _callback(self, indata, frames, time_info, status):
         # Runs on PortAudio's thread. Never block here.
@@ -102,6 +154,8 @@ class UsbAudioSource(AudioSource):
         # Runs on the event loop. If the consumer is busy (model loading, TTS),
         # drop the oldest frame rather than blocking or raising.
         self.last_frame = time.monotonic()
+        if not self.heard and frame.any():
+            self.heard = True
         if self._q.full():
             self._q.get_nowait()
             self._dropped += 1
@@ -122,8 +176,8 @@ class UsbAudioSource(AudioSource):
             callback=self._callback,
         )
         self._stream.start()
-        self.last_frame = time.monotonic()
-        log.info("USB source started on %r (%d ch)", info["name"], n_in)
+        self.last_frame = self.started_at = time.monotonic()
+        log.info("microphone started on %r (%d ch)", info["name"], n_in)
 
     async def stop(self) -> None:
         stream, self._stream = self._stream, None
@@ -148,15 +202,18 @@ class UsbAudioSource(AudioSource):
 
 
 class UsbAudioSink(AudioSink):
-    """Streams PCM to the reSpeaker's speaker output via a persistent OutputStream.
+    """Streams PCM to the speaker (the reSpeaker's, or the Mac's) via a persistent OutputStream.
 
     A persistent stream (rather than sd.play) means no open/close click per
     utterance and sub-10ms latency for interrupts: ``interrupt()`` just empties
     the buffer and the callback outputs silence.
     """
 
-    def __init__(self, device: int | str | None = None, blocksize: int = 1024, volume: float = 1.0):
+    def __init__(self, device: int | str | None = None, blocksize: int = 1024, volume: float = 1.0,
+                 settle_s: float = 0.0):
         self._device = device if device is not None else find_device()
+        self.settle_s = settle_s                # pause after each utterance, for speakers the microphone can hear
+        self.last_frame = time.monotonic()      # when the device last asked for audio; goes stale if it is gone
         if self._device is None:
             raise RuntimeError(f"{RESPEAKER_NAME} not found; is it plugged in?")
         self._blocksize = blocksize
@@ -172,6 +229,7 @@ class UsbAudioSink(AudioSink):
     def _callback(self, outdata, frames, time_info, status):
         if status:
             log.debug("output status: %s", status)
+        self.last_frame = time.monotonic()
         out = np.zeros(frames, dtype=np.float32)
         filled = 0
         while filled < frames:
@@ -208,7 +266,8 @@ class UsbAudioSink(AudioSink):
             callback=self._callback,
         )
         self._stream.start()
-        log.info("USB sink started on %r (%d ch)", info["name"], self._n_out)
+        self.last_frame = time.monotonic()
+        log.info("speaker started on %r (%d ch)", info["name"], self._n_out)
 
     async def stop(self) -> None:
         self.interrupt()
@@ -245,7 +304,14 @@ class UsbAudioSink(AudioSink):
             self._buf.put(audio[i : i + step])
         self._buf.put(None)
         try:
-            await self._done.wait()
+            # The timeout only matters when the speaker has gone away and nothing is being played any more.
+            await asyncio.wait_for(self._done.wait(), timeout=len(audio) / SAMPLE_RATE + 10)
+            if self.settle_s and len(audio) > SAMPLE_RATE // 2:      # speech, not the short listening chime
+                latency = float(getattr(self._stream, "latency", 0) or 0) if self._stream is not None else 0.0
+                await asyncio.sleep(min(1.0, latency + self.settle_s))
+        except asyncio.TimeoutError:
+            log.warning("the speaker stopped taking audio; giving up on this utterance")
+            self.interrupt()
         except asyncio.CancelledError:
             self.interrupt()
             raise

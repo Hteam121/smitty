@@ -576,7 +576,7 @@ function present(e) {
     case "confirm": icon = "shield"; kind = "Asked you"; detail = `You answered: ${d.answer || "nothing"}${d.heard ? ` (“${d.heard}”)` : ""}${d.via === "dashboard" ? " in the dashboard" : d.via === "timeout" ? ", so it was not allowed" : ""}`; if (d.answer !== "yes" && d.answer !== "yes to all") cls = "attn"; break;
     case "hook": icon = "term"; kind = "Claude Code"; detail = d.summary || d.action || ""; if (d.decision === "denied") cls = "attn"; break;
     case "device": icon = "plug"; kind = "Device"; cls = "quiet"; detail = d.ip ? `ESP32 at ${d.ip}` : ""; break;
-    case "system": icon = "power"; kind = "System"; cls = "quiet"; detail = d.voice === true ? "You can speak or type, in the same conversation" : d.voice === false ? "Chat keeps working; voice returns when the reSpeaker is plugged in" : d.mode === "auto" ? "Chat is always on; voice turns on when the reSpeaker is plugged in" : d.attention ? (d.attention === "passive" ? "Quiet: inbox only, nothing spoken unless you ask" : "Results are spoken and sent to the inbox") : d.mode === "text" ? "Text only, no audio" : d.mode === "chat" ? "Text mode" : d.transport ? `Voice mode over ${d.transport === "usb" ? "USB" : "Wi-Fi"}` : ""; break;
+    case "system": icon = "power"; kind = "System"; cls = "quiet"; detail = d.voice === true ? "You can speak or type, in the same conversation" : d.voice === false ? "Chat keeps working; voice returns when a microphone is back" : d.mode === "auto" ? "Chat is always on; voice runs whenever there is a microphone" : d.attention ? (d.attention === "passive" ? "Quiet: inbox only, nothing spoken unless you ask" : "Results are spoken and sent to the inbox") : d.mode === "text" ? "Text only, no audio" : d.mode === "chat" ? "Text mode" : d.transport ? (/^(websocket|ws|wifi)$/.test(d.transport) ? "Voice mode over Wi-Fi" : d.transport === "usb" || d.transport === "respeaker" ? "Voice mode on the reSpeaker" : "Voice mode") : ""; break;
   }
   return { kind, icon, title, detail, cls };
 }
@@ -614,8 +614,8 @@ function renderOverview(o) {
   $("demo").style.display = o.demo ? "block" : "none";
   const waiting = (o.approvals || []).length, textOnly = (o.status || {}).mode === "text" || (o.status || {}).mode === "chat";
   const st = waiting && o.online ? "needs_confirmation" : STATE[o.state] ? o.state : "idle";
-  const autoVoice = !!(o.status || {}).auto_voice;       // voice turns on by itself when the reSpeaker is plugged in
-  STATE.idle[1] = textOnly ? (autoVoice ? "Chat is ready. Plug in the reSpeaker for voice" : "Ready in the chat below") : o.attention === "passive" ? "Passive: listening, staying quiet" : "Listening for the wake word";
+  const autoVoice = !!(o.status || {}).auto_voice;       // voice turns on by itself whenever there is a microphone
+  STATE.idle[1] = textOnly ? (autoVoice ? "Chat is ready. Voice is waiting for a microphone" : "Ready in the chat below") : (o.status || {}).mic_blocked ? "The microphone is silent: see Systems below" : o.attention === "passive" ? "Passive: listening, staying quiet" : "Listening for the wake word";
   STATE.needs_confirmation[1] = waiting ? "An approval is waiting in the inbox" : "Waiting for a yes or no";
   document.querySelectorAll("#mode button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === o.attention));
   const news = waiting + (o.unread || 0);
@@ -627,7 +627,7 @@ function renderOverview(o) {
   const pill = $("pill"); pill.className = "pill" + (o.online ? (st === "needs_confirmation" || st === "error" ? " attn" : " on") : "");
   $("pilltext").textContent = o.online ? (st === "needs_confirmation" ? "Needs your answer" : `Online · ${dur(o.now - (s.started_at || o.now))}`) : "Offline";
   const b = o.brain || {};
-  const facts = [["Mode", s.mode === "chat" ? "Text chat" : s.mode === "text" ? (s.auto_voice ? "Text (voice when plugged in)" : "Text only") : s.mode ? (s.transport === "usb" ? "Voice over USB" : "Voice over Wi-Fi") : "Not running"],
+  const facts = [["Mode", s.mode === "chat" ? "Text chat" : s.mode === "text" ? (s.auto_voice ? "Text (no microphone yet)" : "Text only") : s.mode ? (/^(websocket|ws|wifi)$/.test(s.transport) ? "Voice over Wi-Fi" : /respeaker/i.test(s.audio || (s.transport === "usb" ? "reSpeaker" : "")) ? "Voice on the reSpeaker" : s.audio ? "Voice on this Mac" : "Voice") : "Not running"],
                  ["Brain", prettyModel(b.model || s.brain_model)],
                  ["Attention", o.attention === "passive" ? "Passive (quiet)" : "Active (speaks)"], ["Brain turns", b.turns != null ? String(b.turns) : "0"]];
   const M = o.models || {}, canPick = !!o.can_act && (M.choices || []).length > 0;

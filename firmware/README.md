@@ -3,8 +3,9 @@
 Bridges the reSpeaker XVF3800's I2S audio to Smitty over Wi-Fi (WebSocket, see
 `smitty/audio/websocket.py` for the protocol).
 
-This whole folder is **optional**. Smitty works with the reSpeaker plugged into the Mac over
-USB, which is the default and the tested path. The Wi-Fi bridge is experimental: the Mac side
+This whole folder is **optional**, and so is the reSpeaker itself: Smitty's voice works on the
+Mac's own microphone and speakers. With a reSpeaker, plugging it into the Mac over USB is the tested
+path. The Wi-Fi bridge is experimental: the Mac side
 is tested against a fake device (`scripts/ws_fake_device.py`) and playback through the real
 board works over Wi-Fi, but the microphone direction has not been proven on real hardware yet.
 

@@ -8,7 +8,8 @@ recognition, the wake word and the voice all run locally on the Mac; only the th
 ![The Smitty dashboard](docs/images/dashboard.png)
 
 - **Voice in, voice out.** Custom "hey Smitty" wake word, Whisper for speech to text, Kokoro for the
-  voice, all on-device. A reSpeaker mic array handles echo cancellation so it can hear you while it talks.
+  voice, all on-device. It works with the Mac's own microphone and speakers; a reSpeaker mic array is
+  an optional upgrade for hearing you from across the room.
 - **Runs Claude Code sessions.** Start, resume, follow up on and stop sessions in any of your project
   folders, several at once. Each one is an ordinary Claude Code session you can also open in a terminal.
 - **Asks before anything destructive.** Deleting files, `git push`, sending an email: the session
@@ -33,14 +34,16 @@ recognition, the wake word and the voice all run locally on the Mac; only the th
 
 ## What you need
 
-Only the first three rows are required. Everything else can be added later, one piece at a time.
+Only the first three rows are required, and voice needs nothing beyond them: the Mac's own microphone
+and speakers are enough. Everything else can be added later, one piece at a time.
 
 | Part | Needed? | What it gives you | What you set up |
 |---|---|---|---|
 | Mac with Apple Silicon | **Required** | Whisper runs on MLX, which is Apple Silicon only | macOS, about 5 GB free for models and packages |
 | [uv](https://docs.astral.sh/uv/) | **Required** | Installs Python 3.12 and the dependencies | `brew install uv` |
 | Claude Code, signed in | **Required** | The brain and every session run through it | A Claude subscription (or an API key, see [Auth and billing](#auth-and-billing)) |
-| Seeed reSpeaker XVF3800 (USB) + a speaker | Optional, needed for **voice** | Wake word, talking and listening, LED ring | Plug it in. `brew install libusb` for the LEDs |
+| The Mac's microphone and speakers | Built in | Voice: wake word, talking and listening | Allow microphone access once, when macOS asks |
+| Seeed reSpeaker XVF3800 (USB) + a speaker | Optional | A far-field microphone array with echo cancelling, and an LED ring: hears you across the room | Plug it in. `brew install libusb` for the LEDs |
 | Tasks folder + claude.ai connectors | Optional | Email, calendar and Drive jobs, monitoring | Copy a template, authorize connectors at claude.ai |
 | Claude Code hooks | Optional | Smitty announces and asks for sessions *you* started yourself | `uv run scripts/install_hooks.py` |
 | Obsidian vault | Optional | "Note that..." adds to your notes | Point `SMITTY_VAULT_DIR` at the folder |
@@ -49,9 +52,11 @@ Only the first three rows are required. Everything else can be added later, one 
 | XIAO ESP32S3 Wi-Fi bridge | Optional, **experimental** | The mic array without a USB cable | Soldering, two firmware flashes |
 | Your own wake word | Optional | A different name, or a model tuned to your room | `scripts/train_wakeword.py` |
 
-Without the reSpeaker, Smitty still runs: you type in the dashboard instead of talking. The voice
-code looks for the reSpeaker XVF3800 by name, so another microphone will not work without changing
-`smitty/audio/usb.py`.
+Voice needs no extra hardware: Smitty listens on the Mac's built-in microphone and speaks through
+whatever output is selected in System Settings > Sound. A MacBook, an iMac, or a Mac mini with a USB
+microphone all work. If you also have a reSpeaker, plug it in and Smitty switches to it; unplug it and
+Smitty goes back to the Mac's audio. With no microphone at all (or with `smitty serve`), you type in
+the dashboard instead of talking.
 
 ## Quick start (no hardware, about 10 minutes)
 
@@ -75,32 +80,49 @@ Type into the Chat panel: "what projects do I have?", then "start a session in <
 summarise the README". Smitty looks for projects in the folders listed in `SMITTY_PROJECT_ROOTS`
 (default `~/Desktop`).
 
-## Add voice
+## Add voice (no extra hardware)
 
-1. Plug the reSpeaker XVF3800 into the Mac over USB (the port next to the 3.5 mm jack) and connect
-   a speaker to the board. Use the board for both the microphone and the speaker: its echo
-   cancellation needs to know what is being played.
+1. Nothing to plug in: Smitty uses the Mac's own microphone and speakers. (Optional: if you have a
+   reSpeaker XVF3800, plug it into the Mac over USB, using the port next to the 3.5 mm jack, and connect
+   a speaker to the board. Use the board for both, because its echo cancellation needs to know what is
+   being played.)
 2. Download the speech models (about 2 GB: Whisper large-v3-turbo, Kokoro, Silero VAD):
 
    ```bash
-   brew install libusb                      # LED ring
+   brew install libusb                      # only for the reSpeaker's LED ring
    uv run scripts/download_models.py
    ```
 
 3. Check each stage, then run:
 
    ```bash
-   uv run smitty devices                    # the reSpeaker should be listed
+   uv run smitty devices                    # your microphone and speaker should be listed
    uv run scripts/audio_check.py            # records 3 s and plays it back
-   uv run smitty say "hello"                # the voice, through the board
+   uv run smitty say "hello"                # the voice, through the speaker in use
    uv run scripts/selftest.py               # every stage on synthesized audio, no mic needed
    uv run smitty run                        # say "hey Smitty"
    ```
 
-macOS will ask for microphone permission for your terminal the first time.
+macOS asks for microphone permission for the app Smitty runs in (Terminal, iTerm, your editor) the
+first time. If it was refused, the dashboard's Systems list says the microphone is silent; allow it in
+System Settings > Privacy & Security > Microphone and start Smitty again.
 
-`smitty run` can be started before the board is plugged in: voice joins when the reSpeaker appears
-and leaves when it is unplugged, and the conversation carries on in text either way.
+Which microphone and speaker (`SMITTY_AUDIO`):
+
+- `auto` (default): the reSpeaker when it is plugged in, otherwise the Mac's own. Plugging the board
+  in or out while Smitty runs switches over within a few seconds, between conversations.
+- `mac`: always the Mac's own, even with the board plugged in.
+- `respeaker`: only the reSpeaker; voice waits until it is plugged in.
+
+On the Mac's own audio the microphone is the built-in one when the Mac has one, because Smitty keeps
+the microphone open and an open microphone turns Bluetooth headphones to call quality. The speaker is
+the output selected in System Settings > Sound when voice starts. `SMITTY_MIC` and `SMITTY_SPEAKER`
+pick others by part of their name, as `uv run smitty devices` lists them (for example
+`SMITTY_SPEAKER=MacBook` to keep Smitty on the laptop speakers while headphones are connected, or
+`SMITTY_MIC=Yeti` for a USB microphone). The Mac's own audio has no echo cancelling; Smitty does not
+listen while it speaks, and waits a moment after each sentence so it does not hear its own voice. A
+quiet room and a normal speaking distance work best; the reSpeaker is the upgrade for a noisy room or
+for talking from across it.
 
 ### The wake word
 
@@ -115,7 +137,7 @@ SMITTY_WAKE_MODEL=hey_computer SMITTY_WAKE_VERIFY=log uv run smitty run
 
 Training synthesizes the phrase with Kokoro's 28 English voices plus about 110 negative sentences
 (including hard negatives such as "hey Siri", "hey Smith", "the city"), augments the clips (speed,
-gain, reverb, room noise recorded from the reSpeaker, babble), embeds them with openWakeWord's
+gain, reverb, 20 s of your room's noise recorded from the microphone Smitty uses, babble), embeds them with openWakeWord's
 frozen feature extractor and trains a small classifier exported to ONNX. Evaluation uses the macOS
 `say` voices as a held-out engine. openWakeWord's own bundled models (for example `hey_jarvis`)
 also work with `SMITTY_WAKE_MODEL` without training.
@@ -139,7 +161,8 @@ startup) or export them in your shell, which wins. `.env.example` lists the comm
 | `SMITTY_AUTH` | `login` | `login` = claude.ai subscription, `api_key` = bill `ANTHROPIC_API_KEY` |
 | `SMITTY_BRAIN_MODEL` / `SMITTY_BRAIN_EFFORT` | `claude-opus-5-5` / `low` | The model that talks to you (a pick in the dashboard overrides it) |
 | `SMITTY_WORKER_MODEL` | Claude Code's default | The model new sessions run on (a pick in the dashboard overrides it) |
-| `SMITTY_AUDIO` | `usb` | `usb` or `websocket` (Wi-Fi bridge) |
+| `SMITTY_AUDIO` | `auto` | `auto` (reSpeaker if plugged in, else the Mac's own audio), `mac`, `respeaker` or `websocket` (Wi-Fi bridge) |
+| `SMITTY_MIC` / `SMITTY_SPEAKER` | built-in mic / system output | On the Mac's own audio: part of a device name to use instead |
 | `SMITTY_WAKE_MODEL` / `SMITTY_WAKE_THRESHOLD` | `hey_smitty` / `0.7` | Wake word model and strictness |
 | `SMITTY_WAKE_VERIFY` | `strict` | Double-check the wake word against the transcript; `log` or `off` to relax |
 | `SMITTY_TTS` / `SMITTY_VOICE` | `kokoro` / `bm_george` | `say` forces the macOS built-in voice |
@@ -170,10 +193,10 @@ or your Apple team id in a tracked file.
 ## Commands
 
 ```bash
-uv run smitty run                       # chat always on, voice whenever the reSpeaker is plugged in
+uv run smitty run                       # chat always on, voice on the reSpeaker or the Mac's own audio
 uv run smitty run --brain echo          # wake word -> transcribe -> speak it back (no Claude)
 uv run smitty chat                      # talk to the brain in the terminal; confirmations on stdin
-uv run smitty serve                     # text only, even if the reSpeaker is plugged in
+uv run smitty serve                     # text only: no microphone, no speaker
 uv run smitty dashboard [--demo]        # the dashboard on its own
 uv run smitty schedules                 # list scheduled tasks
 uv run smitty devices                   # list audio devices
@@ -260,8 +283,8 @@ AudioSink  ◄── Kokoro TTS (fallback: macOS `say`) ◄── Brain (Claude 
 ```
 
 All audio goes through `smitty.audio.AudioSource` / `AudioSink` (16 kHz mono int16, 80 ms frames).
-`smitty.audio.usb` is the reSpeaker-over-USB implementation; `smitty.audio.websocket` is the Wi-Fi
-one. A new transport (another microphone, another board) is a new pair of those two classes.
+`smitty.audio.usb` is the implementation for the Mac's sound devices (the reSpeaker over USB, or the
+Mac's own microphone and speakers); `smitty.audio.websocket` is the Wi-Fi one. A new transport (another microphone, another board) is a new pair of those two classes.
 
 ## How it works: the brain
 
@@ -407,13 +430,13 @@ Switch with the top-bar control or by voice ("passive mode", "I'm on a call", "a
 ### Voice and text are one conversation
 
 `uv run smitty run` starts the brain, scheduler, dashboard and chat straight away, with or without the
-microphone. `smitty/voice.py` then watches for the reSpeaker: when it is plugged in, the speech models
-load (first time only) and voice joins; when it is unplugged, voice leaves and Smitty carries on in text.
-Nothing restarts, so the conversation continues across the change.
+microphone. `smitty/voice.py` then looks for a microphone (the reSpeaker when it is plugged in, else the
+Mac's own): when there is one, the speech models load (first time only) and voice joins; when it goes,
+voice leaves and Smitty carries on in text. Nothing restarts, so the conversation continues across the change.
 
 - Type and the reply is text. Speak and the reply is spoken. Both show in the chat, and a typed
   follow-up to something you said (or the other way round) keeps its context.
-- Unplugged, everything goes to the inbox, as in passive mode. An approval that was being asked
+- With no microphone, everything goes to the inbox, as in passive mode. An approval that was being asked
   aloud when the plug was pulled stays open in the dashboard.
 - Unplugging is noticed when no audio arrives for about 4 seconds; plugging in is noticed within about
   3 seconds. If the board is on the USB bus but offers no microphone (Wi-Fi firmware), the dashboard
@@ -442,13 +465,13 @@ Settings → Connectors. Then say, or type into `uv run smitty chat`:
 
 ## Switching the board between wire and Wi-Fi
 
-Needs the firmware images from Seeed (see `firmware/README.md`). `scripts/flash_xvf3800.sh usb` puts the USB firmware back (Smitty over the cable, the default);
+Only for the reSpeaker. Needs the firmware images from Seeed (see `firmware/README.md`). `scripts/flash_xvf3800.sh usb` puts the USB firmware back (the board over its cable, the usual way);
 `scripts/flash_xvf3800.sh i2s` is for the XIAO Wi-Fi bridge. From I2S firmware the board must first
 be in safe mode: hold Mute while plugging in its USB-C until the LED blinks red.
 
 ## LED ring
 
-`smitty/led.py` drives the XVF3800's LED ring over its USB vendor control interface (pyusb +
+Only with the reSpeaker; the Mac's own audio has no ring. `smitty/led.py` drives the XVF3800's LED ring over its USB vendor control interface (pyusb +
 Homebrew libusb; protocol from Seeed's `python_control/xvf_host.py`). States: idle = faint glow,
 listening = cyan direction-of-arrival pointer, thinking = purple breathing, speaking = green
 breathing, needs-confirmation = fast orange breathing, error = solid red. The previous ring
@@ -480,7 +503,7 @@ Also available: `GET /status` and `POST /say {"text": "..."}` for scripts.
 | `smitty/pipeline.py` | state machine: idle → listening → thinking → speaking |
 | `smitty/wake.py`, `vad.py`, `stt.py`, `tts.py` | wake word, end-of-speech detection, Whisper, Kokoro |
 | `smitty/audio/` | `AudioSource` / `AudioSink` contract, USB and WebSocket implementations |
-| `smitty/voice.py` | attaches the voice loop when the reSpeaker is plugged in, detaches when unplugged |
+| `smitty/voice.py` | chooses the microphone (reSpeaker or the Mac's own), attaches the voice loop when there is one, detaches when it goes |
 | `smitty/brain/agent.py` | the brain: a Claude Agent SDK client and its tools |
 | `smitty/brain/sessions.py` | runs each Claude Code session as a worker |
 | `smitty/brain/safety.py`, `browser.py` | what needs a yes, and what is refused |
@@ -524,7 +547,8 @@ Also available: `GET /status` and `POST /say {"text": "..."}` for scripts.
 ## Status
 
 This is a personal project shared as-is, built for one desk and one person. Tested on an M4 Max
-with the reSpeaker XVF3800 on USB firmware 2.1.1. Known gaps: no test suite beyond
+MacBook Pro, with its built-in microphone and speakers and with the reSpeaker XVF3800 on USB firmware
+2.1.1. Known gaps: no test suite beyond
 `scripts/selftest.py`, the Wi-Fi microphone path, push notifications for the phone, and plugging
 the board in and out while Smitty is running has had little real-world use. The Sessions panel's
 view of Claude Code sessions Smitty did not start reads Claude Code's internal files and may stop

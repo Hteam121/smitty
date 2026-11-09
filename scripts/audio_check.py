@@ -1,4 +1,6 @@
-"""Step 1 sanity check: is the reSpeaker there, can we record and play through it?
+"""Step 1 sanity check: is there a microphone and a speaker, can we record and play through them?
+
+Uses what Smitty would use (SMITTY_AUDIO): the reSpeaker when it is plugged in, else the Mac's own.
 
 Usage:  uv run scripts/audio_check.py [--seconds 3] [--no-play]
 """
@@ -14,23 +16,27 @@ import time
 import numpy as np
 
 from smitty.audio import FRAME_SAMPLES, SAMPLE_RATE
-from smitty.audio.usb import UsbAudioSink, UsbAudioSource, describe_devices, find_device
+from smitty.audio.usb import describe_devices
+from smitty.config import settings
+from smitty.voice import LocalAudio
 
 
 async def main(seconds: float, play: bool) -> int:
     print(describe_devices())
-    idx = find_device()
-    if idx is None:
-        print("\nFAIL: reSpeaker XVF3800 not found in sounddevice list.")
+    local = LocalAudio(settings)
+    ready, note = local.microphone()
+    if not ready:
+        print(f"\nFAIL: {note}")
         return 1
-    print(f"\nreSpeaker found at index {idx}\n")
+    print(f"\nUsing: {local.label}\n")
 
     # --- Record -------------------------------------------------------------
     n_frames = int(seconds * SAMPLE_RATE / FRAME_SAMPLES)
     captured: list[np.ndarray] = []
     print(f"Recording {seconds:.1f}s... say something.")
     t0 = time.monotonic()
-    async with UsbAudioSource() as src:
+    source, sink = local.make()
+    async with source as src:
         async for frame in src.frames():
             captured.append(frame)
             rms = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
@@ -51,7 +57,7 @@ async def main(seconds: float, play: bool) -> int:
         print("Playing a 440 Hz beep, then your recording...")
         t = np.arange(int(0.3 * SAMPLE_RATE)) / SAMPLE_RATE
         beep = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
-        async with UsbAudioSink() as sink:
+        async with sink:
             await sink.play(beep, SAMPLE_RATE)
             await asyncio.sleep(0.2)
             await sink.play(audio, SAMPLE_RATE)

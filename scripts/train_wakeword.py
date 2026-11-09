@@ -198,12 +198,16 @@ def say16k(text: str, voice: str) -> np.ndarray:
 def record_room_noise(seconds: float = 20.0) -> np.ndarray | None:
     try:
         import sounddevice as sd
-        from smitty.audio.usb import find_device
+        from smitty.audio.usb import device_name, find_device, mac_devices
+        # The microphone Smitty will listen on: the reSpeaker when it is plugged in, else the Mac's own.
         idx = find_device()
         if idx is None:
+            idx = mac_devices(settings.mic, settings.speaker)[0]
+        if idx is None:
             return None
-        print(f"    recording {seconds:.0f}s of room noise from the reSpeaker (stay quiet-ish)...")
-        rec = sd.rec(int(seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=2, dtype="int16", device=idx)
+        print(f"    recording {seconds:.0f}s of room noise from {device_name(idx)} (stay quiet-ish)...")
+        channels = min(2, int(sd.query_devices(idx)["max_input_channels"]))
+        rec = sd.rec(int(seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=channels, dtype="int16", device=idx)
         sd.wait()
         return rec[:, 0].astype(np.float32) / 32768.0
     except Exception as e:

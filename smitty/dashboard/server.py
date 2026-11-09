@@ -641,7 +641,7 @@ def seed_demo(db_path: Path) -> None:
                    [(ts, k, t, json.dumps(d)) for ts, k, t, d in rows])
     kv = {
         "state": "idle",
-        "status": {"mode": "voice", "pid": 0, "started_at": now - 23.5 * 3600, "transport": "usb", "wake_model": "hey_smitty",
+        "status": {"mode": "voice", "pid": 0, "started_at": now - 23.5 * 3600, "transport": "auto", "voice": True, "audio": "MacBook Pro Microphone and MacBook Pro Speakers", "wake_model": "hey_smitty",
                    "wake_threshold": 0.7, "volume": 0.5, "brain_model": "claude-opus-5-5", "auth": "login", "quiet_hours": "23-7",
                    "version": "0.1.0", "hooks_port": 8765},
         "sessions": [{"key": "demo1", "title": "Dashboard polish", "project": "/Users/demo/Desktop/Smitty", "status": "running",
@@ -667,14 +667,13 @@ def seed_demo(db_path: Path) -> None:
         "attention": "active", "approvals": [], "chat": {"busy": False},
         "brain": {"model": "claude-opus-5-5", "effort": "low", "turns": 31, "cost_usd": 0.2187},
         "device": {"connected": False},
-        "systems": [{"name": "Microphone and speaker", "detail": "reSpeaker XVF3800 over USB", "ok": True},
+        "systems": [{"name": "Microphone and speaker", "detail": "MacBook Pro Microphone and MacBook Pro Speakers", "ok": True},
                     {"name": "Wake word", "detail": "hey smitty, threshold 0.7, strict check", "ok": True},
                     {"name": "Speech to text", "detail": "Whisper large-v3-turbo (local)", "ok": True},
                     {"name": "Voice", "detail": "Kokoro bm_george (local)", "ok": True},
                     {"name": "Brain", "detail": "Claude Opus 5.5, claude.ai login", "ok": True},
                     {"name": "Scheduler", "detail": "2 schedules, quiet hours 23 to 7", "ok": True},
                     {"name": "Claude Code hooks", "detail": "listening on port 8765", "ok": True},
-                    {"name": "LED ring", "detail": "USB control", "ok": True},
                     {"name": "Gmail and Calendar", "detail": "not authorized at claude.ai yet", "ok": False}],
     }
     for k, v in kv.items():
