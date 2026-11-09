@@ -164,6 +164,13 @@ def _make_claude_brain(confirm, notify, attention=None):
                         cwd=str(settings.tasks_dir), scheduler=scheduler, weather=weather, attention=attention,
                         volume=volume, vault=vault)
     brain.volume = volume
+    # Models picked in the dashboard are remembered; without a pick the configured ones apply.
+    from smitty import store
+    prefs = store.get("model_prefs") or {}
+    if prefs.get("default"):
+        mgr.worker_model = str(prefs["default"])
+    if prefs.get("brain"):
+        brain.use_model(str(prefs["brain"]))
     return brain
 
 
@@ -196,9 +203,8 @@ def _systems(mode: str, brain, tts=None, leds=None, note: str = "") -> list[dict
         out.append({"name": "Mode", "ok": True, "detail": note or ("text only, no microphone or speaker: chat from the dashboard"
                     if mode == "text" else "text chat in the terminal, no audio")})
     if hasattr(brain, "mgr"):
-        parts = settings.brain_model.removeprefix("claude-").split("-")
-        model = "Claude " + " ".join(w.capitalize() for w in parts if not w.isdigit()) + " " + ".".join(w for w in parts if w.isdigit())
-        out.append({"name": "Brain", "ok": True, "detail": f"{model.strip()}, {'claude.ai login' if settings.auth != 'api_key' else 'API key'}"})
+        from smitty.brain.models import label
+        out.append({"name": "Brain", "ok": True, "detail": f"Claude {label(brain.model)}, {'claude.ai login' if settings.auth != 'api_key' else 'API key'}"})
         n = sum(1 for x in brain.scheduler.schedules.values() if x.enabled) if getattr(brain, "scheduler", None) else 0
         out.append({"name": "Scheduler", "ok": True, "detail": f"{n} active schedule{'' if n == 1 else 's'}" + (f", quiet hours {settings.quiet_hours}" if settings.quiet_hours else "")})
         if settings.vault_dir:
@@ -218,11 +224,12 @@ async def _heartbeat(mode, brain, started: float, control: bool = False, systems
     while True:
         store.put("status", {**(extra() if extra else {}), "mode": mode() if callable(mode) else mode, "pid": os.getpid(), "started_at": started, "transport": settings.audio_transport,
                              "wake_model": settings.wake_model, "wake_threshold": settings.wake_threshold,
-                             "volume": settings.volume, "brain_model": settings.brain_model, "auth": settings.auth,
+                             "volume": settings.volume, "brain_model": getattr(brain, "model", None) or settings.brain_model, "auth": settings.auth,
                              "quiet_hours": settings.quiet_hours, "version": __version__, "hooks_port": settings.http_port,
                              "control": control})
         if hasattr(brain, "mgr"):
             store.put("sessions", brain.mgr.describe_all())
+            store.put("models", brain.models_snapshot())
         if systems is not None:
             store.put("systems", systems())      # the schedule count and similar details change while running
         await asyncio.sleep(4)

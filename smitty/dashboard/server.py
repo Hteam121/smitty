@@ -354,7 +354,7 @@ class Dashboard:
     async def session_action(self, request: web.Request) -> web.Response:
         body = await self._body(request)
         return await self._forward("session", {"key": request.match_info["key"], "action": request.match_info["action"],
-                                               "text": body.get("text")})
+                                               "text": body.get("text"), "model": body.get("model")})
 
     async def read_notices(self, request: web.Request) -> web.Response:
         body = await self._body(request)
@@ -427,7 +427,7 @@ class Dashboard:
         now = time.time()
         out: dict[str, Any] = {"now": now, "demo": self.demo, "online": False, "state": "offline", "status": {},
                                "stats": {}, "hours": [], "sessions": [], "outside": [], "schedules": [], "device": {}, "brain": {},
-                               "systems": [], "last_heard": None, "last_said": None, "held": 0,
+                               "systems": [], "last_heard": None, "last_said": None, "held": 0, "models": {}, "usage": {},
                                "attention": "active", "approvals": [], "unread": 0, "can_act": False, "chat_busy": False}
         db = self._db()
         kv: dict[str, dict[str, Any]] = {}
@@ -442,6 +442,7 @@ class Dashboard:
                 today = [self._row(r) for r in db.execute("SELECT * FROM events WHERE ts >= ? ORDER BY id", (midnight,))]
                 out["stats"] = self._stats(today)
                 out["hours"] = self._hours(db, now)
+                out["usage"] = self._usage(db, now, midnight)
                 for kind, key in (("heard", "last_heard"), ("said", "last_said")):
                     r = db.execute("SELECT * FROM events WHERE kind = ? ORDER BY id DESC LIMIT 1", (kind,)).fetchone()
                     out[key] = self._row(r) if r else None
@@ -462,6 +463,7 @@ class Dashboard:
         out["outside"] = await asyncio.to_thread(self._outside, kv)
         out["device"] = kv.get("device", {}).get("value", {})
         out["brain"] = kv.get("brain", {}).get("value", {})
+        out["models"] = kv.get("models", {}).get("value") or {}
         out["systems"] = kv.get("systems", {}).get("value", [])
         out["attention"] = kv.get("attention", {}).get("value") or "active"
         saved_volume = kv.get("volume", {}).get("value")
@@ -529,6 +531,31 @@ class Dashboard:
                 if r["kind"] == "heard":
                     buckets[i]["conversations"] += 1
         return buckets
+
+
+    @staticmethod
+    def _usage(db: sqlite3.Connection, now: float, midnight: float) -> dict[str, list[dict[str, Any]]]:
+        """Tokens and cost per model for today, the last 7 days and the last 30, biggest spender first.
+        ``by`` splits each model between Smitty itself (brain), sessions and scheduled checks."""
+        out: dict[str, list[dict[str, Any]]] = {}
+        for name, since in (("today", midnight), ("week", now - 7 * 86400), ("month", now - 30 * 86400)):
+            models: dict[str, dict[str, Any]] = {}
+            try:
+                rows = db.execute(
+                    "SELECT model, source, COUNT(*) AS turns, SUM(input) AS input, SUM(output) AS output, SUM(cache_read) AS cache_read, "
+                    "SUM(cache_write) AS cache_write, SUM(cost_usd) AS cost_usd FROM usage WHERE ts >= ? GROUP BY model, source", (since,)).fetchall()
+            except sqlite3.Error:        # a store from before usage was recorded
+                rows = []
+            for r in rows:
+                m = models.setdefault(r["model"], {"model": r["model"], "turns": 0, "input": 0, "output": 0, "cache_read": 0,
+                                                   "cache_write": 0, "cost_usd": 0.0, "by": {}})
+                for k in ("turns", "input", "output", "cache_read", "cache_write", "cost_usd"):
+                    m[k] += r[k] or 0
+                m["by"][r["source"]] = {"turns": r["turns"], "cost_usd": round(r["cost_usd"] or 0, 4)}
+            for m in models.values():
+                m["cost_usd"] = round(m["cost_usd"], 4)
+            out[name] = sorted(models.values(), key=lambda m: (-m["cost_usd"], -m["output"]))
+        return out
 
 
 # ---------------------------------------------------------------------- demo data
@@ -602,7 +629,8 @@ def seed_demo(db_path: Path) -> None:
     add(318, "session", "Session started: Health check endpoint", outcome="started", session="Health check endpoint", project="demo-app", scheduled=False, prompt="Add a /health endpoint with a test.")
     add(316.5, "confirm", "Health check endpoint wants to git push: git push origin main. Allow it?", heard="Yes, go ahead.", answer="yes")
     add(316.4, "gate", "Approved: git push", session="Health check endpoint", action="git push origin main", decision="approved")
-    add(314, "session", "Session finished: Health check endpoint", outcome="finished", session="Health check endpoint", project="demo-app", scheduled=False, summary="Added the health endpoint with a test and pushed it to main.", turns=9, cost_usd=0.41)
+    add(314, "session", "Session finished: Health check endpoint", outcome="finished", session="Health check endpoint", project="demo-app", scheduled=False, summary="Added the health endpoint with a test and pushed it to main.", turns=9, cost_usd=0.41,
+        models={"claude-sonnet-5-5": 0.38, "claude-haiku-5-5": 0.03}, turn_cost_usd=0.41)
     add(190, "hook", "Your Claude Code session finished in nimbus-api", event="stop", project="nimbus-api", summary="The rate limiter now counts per API key instead of per address.")
     add(141, "hook", "Permission denied by voice: delete files", event="permission", project="storefront", action="rm -rf build", decision="denied")
     add(96, "schedule", "Scheduled: Morning briefing", outcome="created", when="daily at 08:00")
@@ -618,12 +646,17 @@ def seed_demo(db_path: Path) -> None:
                    "version": "0.1.0", "hooks_port": 8765},
         "sessions": [{"key": "demo1", "title": "Dashboard polish", "project": "/Users/demo/Desktop/Smitty", "status": "running",
                       "last_tool": "Edit: smitty/dashboard/index.html", "running_for_s": 720, "auto_approve": False, "turns": 1,
+                      "model": "claude-sonnet-5-5", "model_used": "claude-sonnet-5-5",
                       "scheduled": False, "subagents": [
                           {"type": "Explore", "description": "Find spacing tokens", "status": "done", "last_tool": "", "seconds": 21},
                           {"type": "general-purpose", "description": "Check mobile layout", "status": "running",
                            "last_tool": "Read: smitty/dashboard/index.html", "seconds": 48}]},
                      {"key": "demo2", "title": "Inbox watch", "project": "/Users/demo/Desktop/smitty-tasks", "status": "idle",
-                      "last_tool": "", "running_for_s": 3400, "auto_approve": False, "turns": 6, "scheduled": True, "subagents": []}],
+                      "last_tool": "", "running_for_s": 3400, "auto_approve": False, "turns": 6, "scheduled": True, "subagents": [],
+                      "model": "claude-haiku-5-5", "model_used": "claude-haiku-5-5"}],
+        "models": {"choices": [{"id": "claude-fable-5-1", "label": "Fable 5.1"}, {"id": "claude-opus-5-5", "label": "Opus 5.5"},
+                               {"id": "claude-sonnet-5-5", "label": "Sonnet 5.5"}, {"id": "claude-haiku-5-5", "label": "Haiku 5.5"}],
+                   "brain": "claude-opus-5-5", "brain_default": "claude-opus-5-5", "worker": "claude-sonnet-5-5", "worker_default": None},
         "outside": [{"key": "demo3", "session_id": None, "external": True, "title": "Rate limiter per API key",
                      "project": "/Users/demo/Desktop/nimbus-api", "status": "running", "source": "Terminal", "waiting_for": "",
                      "running_for_s": 2640, "status_for_s": 95, "last_tool": "Bash: pytest tests/test_ratelimit.py -q", "scheduled": False,
@@ -658,6 +691,26 @@ def seed_demo(db_path: Path) -> None:
              ("tool_result", "The file smitty/dashboard/index.html has been updated.", {"tool": "Edit", "error": False})]
     db.executemany("INSERT INTO steps (ts, session, kind, text, detail) VALUES (?, 'demo1', ?, ?, ?)",
                    [(now - 700 + i * 40, k, t, json.dumps(d)) for i, (k, t, d) in enumerate(steps)])
+    used = []
+    for day in range(30):
+        for _ in range(rng.randint(3, 9)):       # Smitty's own turns: short, on the brain model
+            used.append((rng.uniform(0, 1440) + day * 1440, "brain", "brain", "Smitty", "claude-opus-5-5",
+                         rng.randint(20, 300), rng.randint(40, 260), rng.randint(6000, 14000), rng.randint(0, 900)))
+        for _ in range(rng.randint(2, 6)):       # scheduled checks, on the small model
+            used.append((rng.uniform(0, 1440) + day * 1440, "demo2", "scheduled", "Inbox watch", "claude-haiku-5-5",
+                         rng.randint(200, 2000), rng.randint(300, 1500), rng.randint(20000, 90000), rng.randint(500, 6000)))
+        for _ in range(rng.randint(0, 3)):       # coding sessions, with an occasional subagent on the small model
+            ago = rng.uniform(0, 1440) + day * 1440
+            used.append((ago, "demo1", "session", "Dashboard polish", rng.choice(["claude-sonnet-5-5", "claude-sonnet-5-5", "claude-fable-5-1"]),
+                         rng.randint(500, 6000), rng.randint(2000, 14000), rng.randint(150000, 900000), rng.randint(8000, 60000)))
+            if rng.random() < .5:
+                used.append((ago, "demo1", "session", "Dashboard polish", "claude-haiku-5-5",
+                             rng.randint(200, 1500), rng.randint(400, 2500), rng.randint(20000, 120000), rng.randint(2000, 15000)))
+    price = {"claude-fable-5-1": (25, 125), "claude-opus-5-5": (5, 25), "claude-sonnet-5-5": (3, 15), "claude-haiku-5-5": (1, 5)}   # sample rates, $ per million
+    db.executemany("INSERT INTO usage (ts, session, source, title, model, input, output, cache_read, cache_write, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                   [(now - ago * 60, key, src, title, m, i, o, cr, cw,
+                     round((i * price[m][0] + o * price[m][1] + cr * price[m][0] * .1 + cw * price[m][0] * 1.25) / 1e6, 4))
+                    for ago, key, src, title, m, i, o, cr, cw in used])
     outside_steps = [("prompt", "Rate limit by API key, not by client address.", {}),
                      ("tool", "nimbus/ratelimit.py", {"tool": "Read"}),
                      ("text", "The limiter keys on the client address only. I'll key it on the API key and add a test.", {}),

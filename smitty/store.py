@@ -7,6 +7,9 @@ Smitty records what it does here; the dashboard (a separate process or the same 
                                                        tool calls, results); "session" is the worker key
   notices(id, ts, kind, title, body, session, urgent, read, detail-json)
                                                        the notification inbox; read is NULL until seen
+  usage(id, ts, session, source, title, model, input, output, cache_read, cache_write, cost_usd)
+                                                       what each turn used, one row per model; source is
+                                                       brain | session | scheduled
 
 Writers call ``record()`` / ``put()``; both are no-ops until ``init()`` has run and never raise,
 so instrumentation can't break the voice loop. WAL mode lets the dashboard read while Smitty writes.
@@ -60,6 +63,20 @@ CREATE TABLE IF NOT EXISTS notices (
     detail  TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS notices_read ON notices(read, id);
+CREATE TABLE IF NOT EXISTS usage (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          REAL NOT NULL,
+    session     TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    title       TEXT NOT NULL DEFAULT '',
+    model       TEXT NOT NULL,
+    input       INTEGER NOT NULL DEFAULT 0,
+    output      INTEGER NOT NULL DEFAULT 0,
+    cache_read  INTEGER NOT NULL DEFAULT 0,
+    cache_write INTEGER NOT NULL DEFAULT 0,
+    cost_usd    REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS usage_ts ON usage(ts);
 """
 
 STEP_TEXT_MAX = 6000
@@ -148,6 +165,22 @@ def step(session: str, kind: str, text: str, **detail: Any) -> None:
         log.debug("store.step failed: %s", e)
 
 
+def usage(session: str, source: str, title: str, model: str, input: int = 0, output: int = 0,
+          cache_read: int = 0, cache_write: int = 0, cost_usd: float = 0.0) -> None:
+    """Record what one turn used on one model (tokens and the cost at API rates). Never raises."""
+    if _db is None:
+        return
+    try:
+        with _lock:
+            _db.execute("INSERT INTO usage (ts, session, source, title, model, input, output, cache_read, cache_write, cost_usd) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (time.time(), session, source, str(title)[:200], model, int(input), int(output),
+                         int(cache_read), int(cache_write), float(cost_usd)))
+            _db.commit()
+    except Exception as e:
+        log.debug("store.usage failed: %s", e)
+
+
 def notice(kind: str, title: str, body: str = "", session: str | None = None, urgent: bool = False, **detail: Any) -> int | None:
     """Put a notification in the inbox. Returns its id."""
     if _db is None:
@@ -223,6 +256,7 @@ def prune(keep_days: int = 60, steps_days: int = 21) -> None:
             _db.execute("DELETE FROM events WHERE ts < ?", (now - keep_days * 86400,))
             _db.execute("DELETE FROM steps WHERE ts < ?", (now - steps_days * 86400,))
             _db.execute("DELETE FROM notices WHERE ts < ? AND read IS NOT NULL", (now - keep_days * 86400,))
+            _db.execute("DELETE FROM usage WHERE ts < ?", (now - keep_days * 86400,))
             _db.execute("DELETE FROM kv WHERE key LIKE 'live:%' AND updated < ?", (now - 3600,))
             _db.commit()
     except Exception:

@@ -19,6 +19,16 @@ struct SessionsView: View {
                 Theme.background
                 ScrollView {
                 LazyVStack(spacing: 14) {
+                    if !store.snapshot.models.choices.isEmpty {
+                        let m = store.snapshot.models
+                        HStack {
+                            Text("New sessions run on").font(.system(size: 13)).foregroundStyle(Theme.cream2)
+                            Spacer()
+                            ModelMenu(target: "default", current: m.worker == m.workerDefault ? nil : m.worker,
+                                      defaultLabel: m.workerDefault.map { m.label($0) + " (configured)" } ?? "Claude Code's default")
+                        }
+                        .glass(padding: 12)
+                    }
                     if groups.isEmpty {
                         EmptyNote(icon: "square.stack.3d.up", title: "No sessions open",
                                   text: store.macOffline ? "The Mac is offline; this is the last known state." :
@@ -103,6 +113,12 @@ struct SessionRow: View {
                     Button("Send") { showSend.toggle() }.buttonStyle(PillButtonStyle(kind: .primary))
                     Button("Close") { Task { await store.session(session, "close") } }.buttonStyle(PillButtonStyle(kind: .secondary))
                 }
+                Spacer()
+                if !store.snapshot.models.choices.isEmpty {
+                    let m = store.snapshot.models
+                    ModelMenu(target: session.key, current: session.model,
+                              defaultLabel: session.model == nil && !session.modelUsed.isEmpty ? "Default · \(m.label(session.modelUsed))" : "Default")
+                }
             }
             if showSend {
                 HStack(spacing: 8) {
@@ -125,5 +141,44 @@ struct SessionRow: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.navy950.opacity(0.35)))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.hair2, lineWidth: 1))
+    }
+}
+
+/// A model picker: a pill showing the current model that opens the list the Mac's Claude Code offers.
+/// A session that is in the middle of a turn switches at its next step.
+struct ModelMenu: View {
+    @Environment(HubStore.self) private var store
+    let target: String          // a session key, or "default" for new sessions
+    let current: String?        // the chosen model id; nil = the default
+    let defaultLabel: String
+
+    var body: some View {
+        let m = store.snapshot.models
+        Menu {
+            Button { pick("") } label: { row(defaultLabel, on: current == nil) }
+            ForEach(m.choices.filter { !$0.older }) { c in
+                Button { pick(c.id) } label: { row(c.label, on: c.id == current) }
+            }
+            if m.choices.contains(where: \.older) {
+                Menu("Earlier models") {
+                    ForEach(m.choices.filter(\.older)) { c in
+                        Button { pick(c.id) } label: { row(c.label, on: c.id == current) }
+                    }
+                }
+            }
+        } label: {
+            Pill(text: current.map(m.label) ?? defaultLabel, icon: "cpu")
+        }
+        .disabled(store.macOffline)
+        .accessibilityLabel(target == "default" ? "The model new sessions start on" : "The model this session runs on")
+    }
+
+    @ViewBuilder private func row(_ text: String, on: Bool) -> some View {
+        if on { Label(text, systemImage: "checkmark") } else { Text(text) }
+    }
+
+    private func pick(_ id: String) {
+        guard id != (current ?? "") else { return }
+        Task { await store.setModel(target, id) }
     }
 }

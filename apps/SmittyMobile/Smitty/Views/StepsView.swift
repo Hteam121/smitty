@@ -69,6 +69,7 @@ struct StepRow: View {
         case "tool": step.tool ?? "Tool"
         case "tool_result": "Result"
         case "agent": "Subagent"
+        case "model": "Model"
         case "result": step.isError ? "Failed" : "Finished"
         case "error": "Error"
         default: step.kind

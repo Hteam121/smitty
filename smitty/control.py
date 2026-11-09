@@ -8,6 +8,8 @@ the machine is meant to call these.
     POST /control/chat      {text, about?}            talk to the brain in text
     POST /control/schedule  {id, action}              remove | pause | resume | run
     POST /control/session   {key, action, text?}      stop | close | send
+                            {key, action: "model", model}   run on another model ("" = the default); key is a
+                                                      session, "default" (new sessions) or "brain" (Smitty itself)
     POST /control/approval  {id, answer}              yes | no | all
     POST /control/notice    {id, text}                reply to a notification
     POST /control/mode      {mode}                    active | passive
@@ -29,6 +31,7 @@ from typing import Any, Callable
 from aiohttp import web
 
 from smitty import store
+from smitty.brain import models
 
 log = logging.getLogger(__name__)
 
@@ -193,7 +196,34 @@ class Control:
         return {"ok": True, "discarded": n}
 
     # ------------------------------------------------------------------ sessions
+    async def _set_model(self, target: str, model: str | None, via: str) -> dict:
+        """Choose the model for one open session, for new sessions ("default") or for Smitty itself ("brain").
+        The last two are remembered for the next start."""
+        if target in ("default", "brain"):
+            if target == "default":
+                now = self.mgr.set_default_model(model, via=via)
+            else:
+                now = await self.brain.set_model(model, via=via)
+            base = self.mgr.base_worker_model if target == "default" else self.brain.base_model
+            prefs = store.get("model_prefs") or {}
+            prefs.pop(target, None) if now == base else prefs.update({target: now})     # the configured one needs no note
+            store.put("model_prefs", prefs)
+            title = "New sessions" if target == "default" else "Smitty"
+        else:
+            w = self.mgr.by_key(target)
+            if w is None:
+                raise ValueError("that session is no longer open")
+            await self.mgr.set_model(w, model, via=via)
+            now, title = w.model, w.name
+            store.put("sessions", self.mgr.describe_all())
+        if hasattr(self.brain, "models_snapshot"):
+            store.put("models", self.brain.models_snapshot())
+        return {"ok": True, "title": title, "model": now}
+
     async def session(self, body: dict) -> dict:
+        if str(body.get("action") or "") == "model":
+            return await self._set_model(str(body.get("key") or ""), models.clean(body.get("model") or body.get("text")),
+                                         via=str(body.get("via") or "dashboard"))
         w = self.mgr.by_key(str(body.get("key") or ""))
         if w is None:
             raise ValueError("that session is no longer open")
@@ -216,7 +246,7 @@ class Control:
             store.record("heard", text, source="typed", about=w.name)
             await self.mgr.send(w.session_id, text, origin="dashboard")
         else:
-            raise ValueError("action must be stop, close or send")
+            raise ValueError("action must be stop, close, send or model")
         store.put("sessions", self.mgr.describe_all())     # so the page shows the change on its next refresh
         return {"ok": True, "title": w.name}
 

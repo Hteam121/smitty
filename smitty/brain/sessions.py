@@ -43,6 +43,7 @@ from claude_agent_sdk import (
 )
 
 from smitty import store
+from smitty.brain import models
 from smitty.brain.browser import DEFAULT_PROFILE, BrowserState, is_browser_command
 from smitty.brain.notices import NoticeBoard, is_silent
 from smitty.brain.safety import classify_tool_call
@@ -116,9 +117,13 @@ class Worker:
     recorder: StepRecorder | None = None
     browser: BrowserState = field(default_factory=BrowserState)   # what this session last saw in the user's browser
     deny_note: str = ""          # why the last gated call was refused, when it was a hard block
+    model: str | None = None     # the model this session was told to use; None = Claude Code's own default
+    model_used: str = ""         # the model its last reply actually came from
+    meter: models.UsageMeter | None = None
 
     def __post_init__(self) -> None:
         self.recorder = StepRecorder(self.key)
+        self.meter = models.UsageMeter(self.key)
 
     @property
     def name(self) -> str:
@@ -135,6 +140,8 @@ class Worker:
             "project": str(self.project),
             "status": self.status,
             "auto_approve": self.auto_approve,
+            "model": self.model,
+            "model_used": self.model_used,
             "last_tool": self.last_tool,
             "last_result": self.last_result[:400],
             "running_for_s": int(time.monotonic() - self.started_at),
@@ -162,7 +169,9 @@ class SessionManager:
         self.review = review                      # screenshot reviews through the inbox (attention.review)
         self.vault_dir = Path(vault_dir).expanduser().resolve() if vault_dir else None   # Obsidian notes, for task sessions
         self.browser_profile = browser_profile    # the Ego Lite profile sessions may use, and the only one
-        self.worker_model = worker_model
+        self.worker_model = worker_model          # what new sessions run on; None = Claude Code's own default
+        self.base_worker_model = worker_model     # the configured default, to go back to
+        self._session_models: dict[str, str | None] = {}   # session id -> model picked for it, kept across a close
         self.confirm_timeout_s = confirm_timeout_s
         self.workers: dict[str, Worker] = {}   # keyed by session_id once known
         self._pending: list[Worker] = []       # workers whose session_id isn't known yet
@@ -350,7 +359,7 @@ class SessionManager:
         return ClaudeAgentOptions(
             cwd=str(worker.project),
             resume=resume,
-            model=self.worker_model,
+            model=worker.model,
             permission_mode="acceptEdits",
             hooks={"PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_use], timeout=self.confirm_timeout_s + 30)],
                    "PostToolUse": [HookMatcher(matcher="Bash", hooks=[post_tool_use])]},
@@ -397,11 +406,12 @@ class SessionManager:
 
         return request_ui_review
 
-    async def start(self, project: str, prompt: str, title: str | None = None, scheduled: bool = False) -> Worker:
+    async def start(self, project: str, prompt: str, title: str | None = None, scheduled: bool = False,
+                    model: str | None = None) -> Worker:
         p = self.resolve_project(project)
         if p is None:
             raise ValueError(f"no project matching {project!r} under {[str(r) for r in self.project_roots]}")
-        w = Worker(project=p, title=title, scheduled=scheduled)
+        w = Worker(project=p, title=title, scheduled=scheduled, model=model or self.worker_model)
         w.client = ClaudeSDKClient(options=self._options(w, resume=None))
         await w.client.connect()
         self._pending.append(w)
@@ -427,6 +437,7 @@ class SessionManager:
             raise ValueError(f"session {session_id} has no usable project folder")
         w = Worker(project=project, session_id=session_id,
                    title=info.custom_title or info.summary or (info.first_prompt or "")[:60] or None,
+                   model=self._session_models.get(session_id, self.worker_model),
                    **({"key": key} if key else {}))   # same key: its earlier steps stay attached in the dashboard
         w.client = ClaudeSDKClient(options=self._options(w, resume=session_id))
         await w.client.connect()
@@ -442,6 +453,31 @@ class SessionManager:
             raise RuntimeError(f"{w.name} is still busy ({w.status}); interrupt it first or wait")
         self._run(w, prompt, origin)
         return w
+
+    async def set_model(self, w: Worker, model: str | None, via: str = "") -> None:
+        """Move an open session to another model (None = the model new sessions get). A session that is
+        in the middle of a turn switches at its next step."""
+        model = model or self.worker_model
+        if w.client is not None:
+            try:
+                await asyncio.wait_for(w.client.set_model(model), timeout=20)
+            except asyncio.TimeoutError:
+                raise RuntimeError(f"{w.name} did not take the model change; try again when it is idle")
+            except Exception as e:      # Claude Code refuses models its version does not know
+                raise RuntimeError(f"Claude Code would not switch to {models.label(model)}: {str(e)[:240]}")
+        w.model, w.model_used = model, ""
+        if w.session_id:
+            self._session_models[w.session_id] = model
+        store.step(w.key, "model", f"Switched to {models.label(model)}", model=model)
+        store.record("session", f"Model changed to {models.label(model)}: {w.name}", outcome="model", session=w.name,
+                     project=w.project.name, model=model, key=w.key, **({"via": via} if via else {}))
+
+    def set_default_model(self, model: str | None, via: str = "") -> str | None:
+        """Choose what new sessions run on (None = back to the configured default). Open sessions keep theirs."""
+        self.worker_model = model or self.base_worker_model
+        store.record("system", f"New sessions now use {models.label(self.worker_model)}", model=self.worker_model,
+                     **({"via": via} if via else {}))
+        return self.worker_model
 
     def by_key(self, key: str) -> Worker | None:
         for w in list(self._pending) + list(self.workers.values()):
@@ -513,6 +549,8 @@ class SessionManager:
                 elif isinstance(msg, AssistantMessage):
                     if msg.parent_tool_use_id:
                         continue                      # a subagent's message: recorded above, not the session's own answer
+                    if msg.model and not msg.model.startswith("<"):
+                        w.model_used = msg.model
                     for block in msg.content:
                         if isinstance(block, TextBlock) and block.text.strip():
                             final_text = block.text.strip()
@@ -525,6 +563,7 @@ class SessionManager:
                         final_text = msg.result.strip()
                     w.last_result = final_text
                     w.status = "error" if msg.is_error else "idle"
+                    spent = w.meter.feed(msg.model_usage, "scheduled" if w.scheduled else "session", w.name)
                     if w.title and w.session_id and w.turns == 1:
                         try:
                             rename_session(w.session_id, w.title, directory=str(w.project))
@@ -550,7 +589,8 @@ class SessionManager:
                                              "silent": "Check ran, nothing to report",
                                              "held": "Result held for quiet hours"}[outcome] + f": {w.name}",
                                  outcome=outcome, session=w.name, project=w.project.name, scheduled=w.scheduled,
-                                 summary=final_text[-500:], turns=msg.num_turns, cost_usd=msg.total_cost_usd, key=w.key)
+                                 summary=final_text[-500:], turns=msg.num_turns, cost_usd=msg.total_cost_usd, key=w.key,
+                                 models=spent, turn_cost_usd=round(sum(spent.values()), 4))
                     if outcome in ("finished", "error"):
                         await self.notify(event)
         except asyncio.CancelledError:

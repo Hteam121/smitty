@@ -213,6 +213,8 @@ struct Session: Identifiable, Hashable {
     let key: String, sessionId: String?, title: String, scheduled: Bool, turns: Int
     let subagents: [Subagent], project: String, status: String, autoApprove: Bool
     let lastTool: String, lastResult: String, runningFor: Int
+    /// The model this session was told to use (nil = the default) and the one its last reply came from.
+    let model: String?, modelUsed: String
     var id: String { key }
     var projectName: String { (project as NSString).lastPathComponent }
     var isBusy: Bool { status == "running" || status == "starting" }
@@ -229,6 +231,43 @@ struct Session: Identifiable, Hashable {
         lastTool = j["last_tool"]?.string ?? ""
         lastResult = j["last_result"]?.string ?? ""
         runningFor = j["running_for_s"]?.int ?? 0
+        model = j["model"]?.string
+        modelUsed = j["model_used"]?.string ?? ""
+    }
+}
+
+/// One model the Mac's Claude Code can run a session on.
+struct ModelChoice: Identifiable, Hashable {
+    let id: String, label: String, older: Bool
+    init(_ j: JSONValue) {
+        id = j["id"]?.string ?? ""
+        label = j["label"]?.string ?? ModelSettings.name(id)
+        older = j["older"]?.bool ?? false
+    }
+}
+
+/// The model pickers' state: what can be chosen, and what new sessions run on.
+struct ModelSettings {
+    var choices: [ModelChoice] = []
+    var worker: String? = nil, workerDefault: String? = nil
+
+    init() {}
+    init(_ j: JSONValue) {
+        choices = (j["choices"]?.array ?? []).map(ModelChoice.init).filter { !$0.id.isEmpty }
+        worker = j["worker"]?.string
+        workerDefault = j["worker_default"]?.string
+    }
+
+    func label(_ id: String) -> String { choices.first { $0.id == id }?.label ?? Self.name(id) }
+
+    /// claude-opus-5-5 -> Opus 5.5 (a trailing date stamp is dropped).
+    static func name(_ id: String) -> String {
+        let parts = id.replacingOccurrences(of: "claude-", with: "").split(separator: "-").map(String.init)
+            .filter { !($0.count == 8 && Int($0) != nil) }
+        let words = parts.filter { Int($0) == nil }.map(\.capitalized).joined(separator: " ")
+        let nums = parts.filter { Int($0) != nil }.joined(separator: ".")
+        let out = [words, nums].filter { !$0.isEmpty }.joined(separator: " ")
+        return out.isEmpty ? id : out
     }
 }
 
@@ -250,6 +289,7 @@ struct HubSnapshot {
     var state = SmittyState(raw: "offline")
     var sessions: [Session] = []
     var approvals: [Approval] = []
+    var models = ModelSettings()
     var chatBusy = false
     var attention = "active"
     var macOnline = false
@@ -267,6 +307,7 @@ struct HubSnapshot {
             case "state": state = SmittyState(raw: r.value.string ?? "offline")
             case "sessions": sessions = (r.value.array ?? []).map(Session.init)
             case "approvals": approvals = (r.value.array ?? []).map(Approval.init).filter { !$0.id.isEmpty }
+            case "models": models = ModelSettings(r.value)
             case "chat": chatBusy = r.value["busy"]?.bool ?? false
             case "attention": attention = r.value.string ?? "active"
             case "status": mode = r.value["mode"]?.string; voice = r.value["voice"]?.bool ?? false

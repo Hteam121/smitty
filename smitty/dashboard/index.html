@@ -65,16 +65,16 @@
 
   /* ---------- layout */
   .grid { display: grid; gap: 18px; grid-template-columns: minmax(300px, 350px) minmax(0, 1fr) minmax(320px, 390px);
-    grid-template-areas: "lead chat inbox" "tiles tiles tiles" "chart chart chart" "feed feed side"; }
-  .lead { grid-area: lead; } .tiles { grid-area: tiles; } .chart { grid-area: chart; } .feed { grid-area: feed; } .side { grid-area: side; }
+    grid-template-areas: "lead chat inbox" "tiles tiles tiles" "chart chart usage" "feed feed side"; }
+  .lead { grid-area: lead; } .tiles { grid-area: tiles; } .chart { grid-area: chart; } .usage { grid-area: usage; } .feed { grid-area: feed; } .side { grid-area: side; }
   .chat { grid-area: chat; } .inbox { grid-area: inbox; }
   /* the top row: Smitty and its sessions on the left, the chat in the middle, the inbox on the right */
   .lead { display: flex; flex-direction: column; gap: 18px; height: 560px; min-width: 0; }
   .lead .sesscard { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-right: 8px; }
   .lead .sesscard > header { padding-right: 12px; }
   .lead .sesscard #sessions { overflow-y: auto; padding-right: 10px; scrollbar-width: thin; scrollbar-color: var(--cream-4) transparent; }
-  @media (max-width: 1180px) { .grid { grid-template-columns: minmax(300px, 350px) minmax(0,1fr); grid-template-areas: "lead chat" "inbox inbox" "tiles tiles" "chart chart" "feed feed" "side side"; } }
-  @media (max-width: 760px) { .grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "lead" "chat" "inbox" "tiles" "chart" "feed" "side"; } .lead { height: auto; } .lead .sesscard #sessions { max-height: 320px; } .wrap { padding: 14px 14px 30px; } .clock { display: none; } .topbar { flex-wrap: wrap; } }
+  @media (max-width: 1180px) { .grid { grid-template-columns: minmax(300px, 350px) minmax(0,1fr); grid-template-areas: "lead chat" "inbox inbox" "tiles tiles" "chart chart" "usage usage" "feed feed" "side side"; } }
+  @media (max-width: 760px) { .grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "lead" "chat" "inbox" "tiles" "chart" "usage" "feed" "side"; } .lead { height: auto; } .lead .sesscard #sessions { max-height: 320px; } .wrap { padding: 14px 14px 30px; } .clock { display: none; } .topbar { flex-wrap: wrap; } }
 
   /* ---------- now card */
   .now { padding: 14px 20px 16px; }
@@ -109,10 +109,10 @@
   .tile .sub em { font-style: normal; color: #FFC2B7; }
 
   /* ---------- chart */
-  .chart { padding: 20px 22px 16px; position: relative; }
+  .chart { padding: 20px 22px 16px; position: relative; display: flex; flex-direction: column; }
   .chart header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .chart h3, .card h3 { margin: 0; font-size: 15px; font-weight: 620; }
-  .bars { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; align-items: end; height: 132px; border-bottom: 1px solid var(--hair); position: relative; }
+  .bars { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; align-items: end; flex: 1; min-height: 132px; border-bottom: 1px solid var(--hair); position: relative; }
   .bars .col { height: 100%; display: flex; align-items: flex-end; position: relative; cursor: default; }
   .bars .col::after { content: ""; position: absolute; inset: 0 -1px; }                 /* hit target wider than the mark */
   .bars .bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 0; background: linear-gradient(180deg, var(--cream), rgba(246,236,217,.55)); transition: height .5s cubic-bezier(.2,.8,.2,1), opacity .2s; opacity: .86; }
@@ -260,6 +260,36 @@
   .nt .shot img { display: block; width: 100%; height: auto; }
   .nt .acts { grid-column: 2 / -1; }
 
+  /* ---------- model pickers */
+  select.msel { -webkit-appearance: none; appearance: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--cream); cursor: pointer; max-width: 100%; min-width: 0;
+    padding: 5px 26px 5px 10px; border-radius: 10px; border: 1px solid var(--hair); text-overflow: ellipsis;
+    background: rgba(246,236,217,.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23F6ECD9' stroke-opacity='.7' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3 3 3-3'/%3E%3C/svg%3E") no-repeat right 8px center / 11px; }
+  select.msel:hover { border-color: var(--cream-4); background-color: rgba(246,236,217,.1); }
+  select.msel:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+  select.msel:disabled { opacity: .5; cursor: default; }
+  select.msel option { color: #0A1532; background: #F6ECD9; }
+  .acts select.msel { margin-left: auto; }
+  .facts select.msel { display: block; width: 100%; margin-top: 2px; padding-top: 3px; padding-bottom: 3px; }
+  .mpick { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -4px 12px 8px 0; padding-bottom: 10px; border-bottom: 1px solid var(--hair-2); font-size: 12.5px; color: var(--cream-2); }
+  .mpick:empty { display: none; }
+
+  /* ---------- usage by model: one cream bar per model, the number beside it */
+  .usage { position: relative; display: flex; flex-direction: column; }
+  .usage > header { flex-wrap: wrap; }
+  .usage .seg button { padding: 4px 10px; font-size: 12px; }
+  .utotal { display: flex; align-items: baseline; gap: 9px; margin-bottom: 6px; font-size: 12.5px; color: var(--cream-2); }
+  .utotal b { font-size: 26px; font-weight: 650; letter-spacing: -.01em; color: var(--cream); }
+  .urows { max-height: 222px; overflow-y: auto; margin-right: -12px; padding-right: 12px; scrollbar-width: thin; scrollbar-color: var(--cream-4) transparent; }
+  .urow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--hair-2); cursor: default; }
+  .urow b { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .urow .uv { font-size: 13.5px; font-weight: 600; }
+  .ubar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: rgba(246,236,217,.1); overflow: hidden; }
+  .ubar i { display: block; height: 100%; min-width: 3px; border-radius: 0 4px 4px 0; background: linear-gradient(90deg, rgba(246,236,217,.6), var(--cream)); opacity: .86; transition: width .5s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+  .urow:hover .ubar i { opacity: 1; }
+  .urow .ud { grid-column: 1 / -1; font-size: 12px; color: var(--cream-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unote { margin-top: auto; padding-top: 10px; font-size: 12px; color: var(--cream-3); }
+  .usage .tip { white-space: normal; width: max-content; max-width: 290px; }
+
   /* ---------- sessions, subagents, schedules */
   .row.off .t { color: var(--cream-2); font-weight: 500; }
   .row[data-view], .item[data-view] { cursor: pointer; }
@@ -300,6 +330,7 @@
   .st.tool_result .sx { color: var(--cream-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
   .st.tool_result.open .sx { -webkit-line-clamp: unset; }
   .st.agent .sk { color: var(--tint); } .st.agent .sx { font-weight: 600; }
+  .st.model { color: var(--cream-3); font-size: 12.5px; } .st.model .sx { color: var(--cream-2); }
   .st.err .sk, .st.gate .sk { color: var(--coral); } .st.err .sx { color: #FFD0C7; }
   .st.result { color: var(--cream-3); font-size: 12.5px; } .st.result .sx { color: var(--cream-2); }
   .st.sub { margin-left: 14px; padding-left: 12px; border-left: 1px solid rgba(157,180,242,.3); }
@@ -364,7 +395,7 @@
           <output id="volnum" for="vol">50%</output>
         </div>
       </section>
-      <section class="glass card sesscard" aria-label="Sessions"><header><h3>Sessions</h3><span class="count num" id="sesscount">0</span></header><div id="sessions"></div></section>
+      <section class="glass card sesscard" aria-label="Sessions"><header><h3>Sessions</h3><span class="count num" id="sesscount">0</span></header><div class="mpick" id="defpick"></div><div id="sessions"></div></section>
     </div>
 
     <section class="glass chat" aria-label="Chat with Smitty">
@@ -395,6 +426,13 @@
       <div class="axis" id="axis" aria-hidden="true"></div>
       <div class="tip" id="tip"></div>
       <table class="sr" id="hourtable"></table>
+    </section>
+
+    <section class="glass card usage" aria-label="Usage by model">
+      <header><h3>Usage by model</h3><div class="seg" id="urange" role="group" aria-label="Period">
+        <button type="button" data-r="today">Today</button><button type="button" data-r="week">7 days</button><button type="button" data-r="month">30 days</button></div></header>
+      <div id="usage"></div>
+      <div class="tip" id="utip"></div>
     </section>
 
     <section class="glass feed" aria-label="Activity feed">
@@ -490,11 +528,35 @@ function until(iso) {
 function dur(s) { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h} h ${m} min` : m ? `${m} min` : `${s} s`; }
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const since = (s) => s >= 172800 ? `${Math.floor(s / 86400)} days` : s >= 3600 ? `${Math.floor(s / 3600)} h` : dur(s);
-function prettyModel(m) {
-  if (!m) return "none";
-  const parts = m.replace(/^claude-/, "").split("-"), words = parts.filter((x) => isNaN(x)), nums = parts.filter((x) => !isNaN(x));
-  return "Claude " + words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ") + (nums.length ? " " + nums.join(".") : "");
+function modelName(m) {      // claude-opus-5-5 -> Opus 5.5
+  if (!m) return "";
+  const c = ((O.models || {}).choices || []).find((x) => x.id === m); if (c) return c.label;
+  const parts = m.replace(/^claude-/, "").split("-").filter((x) => !/^\d{8}$/.test(x)), words = parts.filter((x) => isNaN(x)), nums = parts.filter((x) => !isNaN(x));
+  return (words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ") + (nums.length ? " " + nums.join(".") : "")) || m;
 }
+const prettyModel = (m) => m ? "Claude " + modelName(m) : "none";
+const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "k" : String(Math.round(n || 0));
+const fmtCost = (c) => c >= 100 ? "$" + Math.round(c).toLocaleString() : c >= .01 ? "$" + c.toFixed(2) : c > 0 ? "under $0.01" : "$0.00";
+/* A model picker. target: a session key, "default" (new sessions) or "brain" (Smitty itself). first: the label of
+   the "no particular model" choice, or null to offer only real models. */
+function modelSelect(target, current, first, title) {
+  const ch = (O.models || {}).choices || [], known = !current || ch.some((c) => c.id === current);
+  return `<select class="msel" data-model="${esc(target)}" title="${esc(title)}" aria-label="${esc(title)}">` +
+    (first == null ? "" : `<option value=""${current ? "" : " selected"}>${esc(first)}</option>`) +
+    (known ? "" : `<option value="${esc(current)}" selected>${esc(modelName(current))}</option>`) +
+    opt(ch.filter((c) => !c.older)) + (ch.some((c) => c.older) ? `<optgroup label="Earlier models">${opt(ch.filter((c) => c.older))}</optgroup>` : "") + `</select>`;
+  function opt(list) { return list.map((c) => `<option value="${esc(c.id)}"${c.id === current ? " selected" : ""}>${esc(c.label)}</option>`).join(""); }
+}
+// Don't redraw under an open picker. Only for a short while after it was touched, so a picker left focused cannot freeze its list.
+let pickAt = 0;
+["mousedown", "keydown"].forEach((t) => document.addEventListener(t, (ev) => { if (ev.target.closest && ev.target.closest("select.msel")) pickAt = Date.now(); }, true));
+const picking = (el) => { const a = document.activeElement; return !!a && a.tagName === "SELECT" && el.contains(a) && Date.now() - pickAt < 20000; };
+document.addEventListener("change", async (ev) => {
+  const sel = ev.target.closest("select.msel"); if (!sel) return;
+  const target = sel.dataset.model, model = sel.value; sel.blur(); sel.disabled = true;
+  const r = await act(`/api/sessions/${encodeURIComponent(target)}/model`, { model });
+  if (!r) { $("sessions")._h = $("defpick")._h = null; renderOverview(O); }      // put the picker back where it was
+});
 
 /* ---------- event presentation */
 function present(e) {
@@ -507,7 +569,8 @@ function present(e) {
       detail = [d.heard ? `Heard “${d.heard}”` : "", d.score != null ? `match ${Math.round(d.score * 100)}%` : ""].filter(Boolean).join(" · "); break;
     case "session": icon = "term"; kind = d.scheduled ? "Scheduled check" : "Session"; detail = d.outcome === "started" ? (d.prompt || "") : (d.summary || "");
       if (d.outcome === "error") cls = "attn"; if (d.outcome === "silent") { cls = "quiet"; detail = ""; } if (d.outcome === "held") cls = "attn";
-      if (d.project && d.outcome !== "silent") detail = [d.project, detail].filter(Boolean).join(" · "); break;
+      { const ms = Object.keys(d.models || {}), used = ms.length ? ms.map(modelName).join(" + ") + (d.turn_cost_usd ? ", " + fmtCost(d.turn_cost_usd) : "") : "";
+        if (d.project && d.outcome !== "silent") detail = [d.project, used, detail].filter(Boolean).join(" · "); } break;
     case "schedule": icon = "clock"; kind = "Schedule"; detail = d.when || ""; if (d.outcome === "fired" || d.outcome === "skipped") cls = "quiet"; break;
     case "gate": icon = "shield"; kind = "Approval"; detail = [d.session, d.action].filter(Boolean).join(" · "); if (d.decision === "denied") cls = "attn"; break;
     case "confirm": icon = "shield"; kind = "Asked you"; detail = `You answered: ${d.answer || "nothing"}${d.heard ? ` (“${d.heard}”)` : ""}${d.via === "dashboard" ? " in the dashboard" : d.via === "timeout" ? ", so it was not allowed" : ""}`; if (d.answer !== "yes" && d.answer !== "yes to all") cls = "attn"; break;
@@ -567,7 +630,12 @@ function renderOverview(o) {
   const facts = [["Mode", s.mode === "chat" ? "Text chat" : s.mode === "text" ? (s.auto_voice ? "Text (voice when plugged in)" : "Text only") : s.mode ? (s.transport === "usb" ? "Voice over USB" : "Voice over Wi-Fi") : "Not running"],
                  ["Brain", prettyModel(b.model || s.brain_model)],
                  ["Attention", o.attention === "passive" ? "Passive (quiet)" : "Active (speaks)"], ["Brain turns", b.turns != null ? String(b.turns) : "0"]];
-  $("facts").innerHTML = facts.map(([k, v]) => `<div><span class="label">${k}</span><b>${esc(v)}</b></div>`).join("");
+  const M = o.models || {}, canPick = !!o.can_act && (M.choices || []).length > 0;
+  if (!picking($("facts"))) $("facts").innerHTML = facts.map(([k, v]) => `<div><span class="label">${k}</span>${k === "Brain" && canPick
+    ? modelSelect("brain", M.brain || b.model, null, "The model Smitty itself thinks with") : `<b>${esc(v)}</b>`}</div>`).join("");
+  if (!picking($("defpick"))) setHTML($("defpick"), canPick ? `<span>New sessions run on</span>${modelSelect("default", M.worker === M.worker_default ? "" : M.worker,
+    M.worker_default ? modelName(M.worker_default) + " (configured)" : "Claude Code's default", "The model new sessions start on")}` : "");
+  renderUsage(o);
 
   const t = o.stats || {}, n = (k) => t[k] || 0, running = (o.sessions || []).filter((x) => x.status === "running" || x.status === "awaiting_approval").length;
   const checks = n("checks_silent") + n("checks_spoke") + n("checks_held");
@@ -593,14 +661,15 @@ function renderOverview(o) {
       <div class="d">${esc([(x.project || "").split("/").pop(), x.source, what].filter(Boolean).join(" · "))}</div>
       ${subs.length ? `<div class="subs">${subs.map((a) => `<div class="sa"><i class="running"></i><b>${esc(a.description || a.type)}</b><span>${esc(a.type)} · ${esc(a.last_tool || "working")} · ${dur(a.seconds)}</span></div>`).join("")}</div>` : ""}</div>`;
   }).join("") + (outIdle ? `<button class="more" type="button" data-idle>${showIdleOutside ? "Hide" : "Show"} ${outIdle} idle</button>` : "") : "";
-  setHTML($("sessions"), ss.length || outside.length ? ss.map((x) => {
+  if (!picking($("sessions"))) setHTML($("sessions"), ss.length || outside.length ? ss.map((x) => {
     const live = x.status === "running", attn = x.status === "awaiting_approval" || x.status === "error", busy = live || x.status === "awaiting_approval" || x.status === "starting";
     const label = { running: "Running", awaiting_approval: "Needs approval", idle: "Idle", error: "Failed", starting: "Starting" }[x.status] || x.status;
     const subs = (x.subagents || []).filter((a) => a.status === "running" || busy);
     return `<div class="row" ${x.key ? `data-view="${esc(x.key)}" data-title="${esc(x.title)}" title="Show what this session is doing"` : ""}><div class="t">${esc(x.title)}</div><span class="chip ${live ? "live" : attn ? "attn" : ""}">${esc(label)}</span>
-      <div class="d">${esc((x.project || "").split("/").pop())}${x.scheduled ? " · scheduled" : ""}${x.last_tool && busy ? " · " + esc(x.last_tool) : ""}</div>
+      <div class="d">${esc((x.project || "").split("/").pop())}${x.scheduled ? " · scheduled" : ""}${!canPick && (x.model_used || x.model) ? " · " + esc(modelName(x.model_used || x.model)) : ""}${x.last_tool && busy ? " · " + esc(x.last_tool) : ""}</div>
       ${subs.length ? `<div class="subs">${subs.map((a) => `<div class="sa"><i class="${esc(a.status)}"></i><b>${esc(a.description || a.type)}</b><span>${esc(a.type)} · ${a.status === "running" ? esc(a.last_tool || "working") : esc(a.status)} · ${dur(a.seconds)}</span></div>`).join("")}</div>` : ""}
-      ${x.key ? `<div class="acts"><button class="btn" type="button" data-view="${esc(x.key)}" data-title="${esc(x.title)}">View steps</button>${o.can_act ? `<button class="btn ${busy ? "danger" : ""}" type="button" data-sess="${esc(x.key)}" data-do="${busy ? "stop" : "close"}">${busy ? "Stop" : "Close"}</button>` : ""}</div>` : ""}</div>`;
+      ${x.key ? `<div class="acts"><button class="btn" type="button" data-view="${esc(x.key)}" data-title="${esc(x.title)}">View steps</button>${o.can_act ? `<button class="btn ${busy ? "danger" : ""}" type="button" data-sess="${esc(x.key)}" data-do="${busy ? "stop" : "close"}">${busy ? "Stop" : "Close"}</button>` : ""}${canPick ? modelSelect(x.key, x.model || "", x.model_used && !x.model ? `Default · ${modelName(x.model_used)}` : "Default",
+        busy ? "The model this session runs on. It switches at its next step" : "The model this session runs on") : ""}</div>` : ""}</div>`;
   }).join("") + outsideHTML : `<div class="empty">${o.online ? "No sessions are open." : "Sessions appear while Smitty is running."}</div>`);
 
   const sc = o.schedules || []; $("schedcount").textContent = sc.filter((x) => x.enabled).length;
@@ -630,6 +699,33 @@ function renderOverview(o) {
     : `<div class="empty">Shown once Smitty has started.</div>`;
   $("foot").textContent = `${(o.total_events || 0).toLocaleString()} events in the local store · refreshes every 2 seconds`;
 }
+
+/* ---------- usage by model */
+let urange = "today";
+try { urange = { today: 1, week: 1, month: 1 }[localStorage.getItem("smittyUsageRange")] ? localStorage.getItem("smittyUsageRange") : "today"; } catch (e) {}
+const SOURCE = { brain: "Smitty itself", session: "Sessions", scheduled: "Scheduled checks" };
+function renderUsage(o) {
+  document.querySelectorAll("#urange button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.r === urange));
+  const rows = (o.usage || {})[urange] || [], period = { today: "today", week: "in the last 7 days", month: "in the last 30 days" }[urange];
+  if (!rows.length) return setHTML($("usage"), `<div class="empty">Nothing used ${period}. Every turn Smitty or one of its sessions takes is counted here, per model.</div>`);
+  const byCost = rows.some((r) => r.cost_usd > 0), size = (r) => byCost ? r.cost_usd : r.input + r.output + r.cache_read + r.cache_write;
+  const max = Math.max(...rows.map(size)) || 1, total = rows.reduce((n, r) => n + r.cost_usd, 0), turns = rows.reduce((n, r) => n + r.turns, 0);
+  setHTML($("usage"), `<div class="utotal"><b class="num">${fmtCost(total)}</b><span>${period} · ${plural(rows.length, "model")} · ${plural(turns, "turn")}</span></div><div class="urows">` +
+    rows.map((r, i) => `<div class="urow" data-i="${i}"><b>${esc(modelName(r.model))}</b><span class="uv num">${fmtCost(r.cost_usd)}</span>
+      <div class="ubar" aria-hidden="true"><i style="width:${Math.max(1, size(r) / max * 100).toFixed(1)}%"></i></div>
+      <div class="ud num">${plural(r.turns, "turn")} · ${fmtTok(r.input + r.cache_write)} in · ${fmtTok(r.output)} out · ${fmtTok(r.cache_read)} cached</div></div>`).join("") +
+    `</div><div class="unote">Cost is what these tokens cost at API rates${(o.status || {}).auth === "login" || o.demo ? ". On your Claude plan it is an estimate, not a bill" : ""}.</div>`);
+}
+$("urange").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return; urange = b.dataset.r; try { localStorage.setItem("smittyUsageRange", urange); } catch (e) {} renderUsage(O); });
+$("usage").addEventListener("mousemove", (ev) => {
+  const row = ev.target.closest(".urow"), t = $("utip"); if (!row) return void (t.style.opacity = 0);
+  const r = ((O.usage || {})[urange] || [])[+row.dataset.i]; if (!r) return;
+  t.innerHTML = `<b>${esc(modelName(r.model))}</b><br>` + Object.keys(SOURCE).filter((k) => r.by[k]).map((k) => `${SOURCE[k]}: ${plural(r.by[k].turns, "turn")}, ${fmtCost(r.by[k].cost_usd)}`).join("<br>") +
+    `<br><span class="dim">${r.input.toLocaleString()} input · ${r.output.toLocaleString()} output<br>${r.cache_read.toLocaleString()} read from cache · ${r.cache_write.toLocaleString()} written to it</span>`;
+  const pr = $("usage").parentElement.getBoundingClientRect(), rr = row.getBoundingClientRect();
+  t.style.left = pr.width / 2 + "px"; t.style.top = (rr.top - pr.top - 4) + "px"; t.style.opacity = 1;
+});
+$("usage").addEventListener("mouseleave", () => { $("utip").style.opacity = 0; });
 
 function renderHours(hours) {
   const max = Math.max(1, ...hours.map((h) => h.total));
@@ -714,6 +810,7 @@ showVolume(50);
 /* ---------- sessions and schedules: buttons */
 let showIdleOutside = false;      // idle Claude Code sessions stay folded away until asked for
 $("sessions").addEventListener("click", (ev) => {
+  if (ev.target.closest("select")) return;
   if (ev.target.closest("[data-idle]")) { showIdleOutside = !showIdleOutside; return renderOverview(O); }
   const b = ev.target.closest("button");
   if (b && b.dataset.sess) return act(`/api/sessions/${b.dataset.sess}/${b.dataset.do}`);
@@ -774,7 +871,7 @@ $("brainbtn").addEventListener("click", () => openSession("brain", "Smitty's own
 const D = { key: null, after: 0, timer: null, loading: false, empty: true, pinned: true };
 const nearEnd = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < 90;
 $("steps").addEventListener("scroll", () => { D.pinned = nearEnd($("steps")); });
-const STEP = { prompt: "Asked", thinking: "Reasoning", text: "Wrote", tool_result: "Result", agent: "Subagent", gate: "Approval", error: "Error" };
+const STEP = { prompt: "Asked", thinking: "Reasoning", text: "Wrote", tool_result: "Result", agent: "Subagent", gate: "Approval", error: "Error", model: "Model" };
 function stepHTML(x) {
   const d = x.detail || {}, sub = d.agent && x.kind !== "agent" ? " sub" : "", when = new Date(x.ts * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
   if (x.kind === "result") return `<div class="st result ${d.error ? "err" : ""}"><span class="sk">${d.error ? "Failed" : "Done"}</span><div class="sx">${[d.turns != null ? plural(d.turns, "turn") : "", d.seconds ? dur(d.seconds) : "", when].filter(Boolean).join(" · ")}</div></div>`;
@@ -810,7 +907,7 @@ async function drawTick() {
     $("dchip").textContent = brain ? (O.chat_busy ? "Working" : "") : x ? ({ running: "Running", awaiting_approval: "Needs approval", waiting: "Needs you", idle: "Idle", error: "Failed", starting: "Starting" }[x.status] || x.status) : "Ended";
     $("dchip").className = "chip " + (busy && x.status !== "awaiting_approval" ? "live" : x && ["awaiting_approval", "waiting", "error"].includes(x.status) ? "attn" : "");
     $("dchip").hidden = !$("dchip").textContent;
-    $("dsub").textContent = brain ? "How Smitty handled each request: which tools it called and what came back" : x ? [(x.project || "").split("/").pop(), x.scheduled ? "scheduled" : "", ext ? x.source : plural(x.turns || 1, "turn"), ext && x.waiting_for ? "waiting: " + x.waiting_for : ""].filter(Boolean).join(" · ") : "This session is no longer open";
+    $("dsub").textContent = brain ? "How Smitty handled each request: which tools it called and what came back" : x ? [(x.project || "").split("/").pop(), x.scheduled ? "scheduled" : "", ext ? x.source : plural(x.turns || 1, "turn"), modelName(x.model_used || x.model), ext && x.waiting_for ? "waiting: " + x.waiting_for : ""].filter(Boolean).join(" · ") : "This session is no longer open";
     $("dstop").hidden = !(busy && O.can_act && !ext); $("dstop").dataset.key = key;
     const canSend = !!x && !busy && !!O.can_act && !brain && !ext; $("dcomposer").hidden = !canSend;
     setHTML($("dhint"), brain ? "" : ext ? (x ? `View only: Smitty did not start this session. Continue it where it is open (${esc(x.source || "Claude Code")}).` : key.startsWith("cc-") ? `To pick it up again: <code>claude --resume ${esc(key.slice(3))}</code> (run it in that project's folder)` : "")

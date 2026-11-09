@@ -153,6 +153,11 @@ final class HubStore {
         if let text { b["text"] = text }
         await send("session", b)
     }
+    /// Runs a session on another model. `target` is a session key, or "default" for the model new sessions
+    /// start on; an empty `model` means the default.
+    func setModel(_ target: String, _ model: String) async {
+        await send("session", ["key": target, "action": "model", "model": model, "via": "phone"])
+    }
     /// Shows the notices read right away and sends one mark_read for the whole burst (cards marking
     /// themselves as they scroll into view, or "Mark all read") instead of one command per card.
     func markRead(_ ids: [Int64]) {

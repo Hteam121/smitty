@@ -60,6 +60,7 @@ create index if not exists steps_session on steps (session, id);
 --   approval      {id, answer: yes|no|all}     answer a pending approval (id from hub_state.approvals)
 --   notice_reply  {id, text}                   reply to an inbox item (continues that session)
 --   session       {key, action: stop|close|send, text?}
+--                 {key, action: model, model}  run on another model ("" = default); key may be "default" (new sessions)
 --   schedule      {id, action: remove|pause|resume|run}
 --   mode          {mode: active|passive}
 --   mark_read     {ids: [..]} or {}            mark inbox items read (all unread when no ids)

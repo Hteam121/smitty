@@ -137,8 +137,8 @@ startup) or export them in your shell, which wins. `.env.example` lists the comm
 | `SMITTY_PROJECT_ROOTS` | `~/Desktop` | Colon-separated folders that hold your projects |
 | `SMITTY_TASKS_DIR` | `~/Desktop/smitty-tasks` | Where non-coding jobs run |
 | `SMITTY_AUTH` | `login` | `login` = claude.ai subscription, `api_key` = bill `ANTHROPIC_API_KEY` |
-| `SMITTY_BRAIN_MODEL` / `SMITTY_BRAIN_EFFORT` | `claude-opus-5-5` / `low` | The model that talks to you |
-| `SMITTY_WORKER_MODEL` | Claude Code's default | The model sessions run on |
+| `SMITTY_BRAIN_MODEL` / `SMITTY_BRAIN_EFFORT` | `claude-opus-5-5` / `low` | The model that talks to you (a pick in the dashboard overrides it) |
+| `SMITTY_WORKER_MODEL` | Claude Code's default | The model new sessions run on (a pick in the dashboard overrides it) |
 | `SMITTY_AUDIO` | `usb` | `usb` or `websocket` (Wi-Fi bridge) |
 | `SMITTY_WAKE_MODEL` / `SMITTY_WAKE_THRESHOLD` | `hey_smitty` / `0.7` | Wake word model and strictness |
 | `SMITTY_WAKE_VERIFY` | `strict` | Double-check the wake word against the transcript; `log` or `off` to relax |
@@ -368,6 +368,14 @@ channel (`smitty/control.py`: `/control/*` on port 8765, guarded by `~/.smitty/c
   session, alongside the spoken question when Smitty is in active mode. First answer wins.
 - **Sessions.** Each open session with its subagents (type, what it is doing, how long). View steps,
   Stop a running one, Close an idle one.
+- **Models.** Each session has a model picker; a session that is mid-turn switches at its next step.
+  "New sessions run on" sets what sessions start on, and the Brain picker sets the model Smitty itself
+  thinks with. Those two are remembered across restarts. The choices are the models your Claude Code
+  lists for your account.
+- **Usage by model.** Next to the activity chart: tokens and cost per model for today, 7 days or 30
+  days, split between Smitty itself, sessions and scheduled checks (hover a row). Cost is what the
+  tokens cost at API rates; on a Claude plan that is an estimate, not a bill. Counting starts with the
+  version that added it, and covers Smitty's own sessions only.
 - **Schedules.** Run now, Pause / Resume, Remove (asks once more). Remove, Pause and Resume also work
   while Smitty is off; the page then edits `~/.smitty/schedules.json` directly.
 - **Active / Passive** switch in the top bar (below).

@@ -25,6 +25,7 @@ from claude_agent_sdk import (
 )
 
 from smitty import store
+from smitty.brain import models
 from smitty.brain.sessions import SessionManager
 from smitty.brain.stream import StepRecorder
 
@@ -252,6 +253,12 @@ class ClaudeBrain:
         self.attention = attention
         self.vault = vault
         self.recorder = StepRecorder("brain")
+        self.meter = models.UsageMeter("brain")
+        self.base_model = model                 # the configured model, to go back to
+        self.model_used = ""                    # the model the last reply actually came from
+        self.model_choices = models.choices()   # replaced at start with what this account's Claude Code lists
+        self.effort = effort
+        self.turn_count = 0
         self._lock = asyncio.Lock()      # one turn at a time: voice, typed chat and announcements share this client
         tools = build_tools(mgr, scheduler, weather, attention, volume, vault)
         server = create_sdk_mcp_server(name="smitty", version="1.0.0", tools=tools)
@@ -279,12 +286,49 @@ class ClaudeBrain:
         self._client = ClaudeSDKClient(options=self._options)
         await self._client.connect()
         log.info("brain connected (model=%s)", self._options.model)
+        try:
+            self.model_choices = models.choices(await asyncio.wait_for(self._client.get_server_info(), timeout=10))
+        except Exception as e:
+            log.debug("could not read the model list from Claude Code: %s", e)
+        self._publish()
 
     async def stop(self) -> None:
         if self._client:
             await self._client.disconnect()
             self._client = None
         await self.mgr.shutdown()
+
+    # ------------------------------------------------------------------ models
+    @property
+    def model(self) -> str | None:
+        return self._options.model
+
+    def use_model(self, model: str | None) -> None:
+        """Before start: the model to connect with (None keeps the configured one)."""
+        self._options.model = model or self.base_model
+
+    async def set_model(self, model: str | None, via: str = "") -> str | None:
+        """Switch the model Smitty itself thinks with (None = back to the configured one)."""
+        model = model or self.base_model
+        if self._client is not None:
+            try:
+                await asyncio.wait_for(self._client.set_model(model), timeout=20)
+            except Exception as e:      # a timeout, or a model this Claude Code version does not know
+                raise RuntimeError(f"Claude Code would not switch to {models.label(model)}: {str(e)[:240] or 'no answer'}")
+        self._options.model, self.model_used = model, ""
+        store.record("system", f"Smitty now thinks with {models.label(model)}", model=model, **({"via": via} if via else {}))
+        self._publish()
+        return model
+
+    def models_snapshot(self) -> dict[str, Any]:
+        """What the dashboard and the phone need to show the model pickers."""
+        return {"choices": self.model_choices, "brain": self.model, "brain_default": self.base_model,
+                "worker": self.mgr.worker_model, "worker_default": self.mgr.base_worker_model}
+
+    def _publish(self) -> None:
+        store.put("models", self.models_snapshot())
+        store.put("brain", {"model": self.model_used or self.model, "effort": self.effort,
+                            "turns": self.turn_count, "cost_usd": getattr(self, "_cost", 0.0)})
 
     @staticmethod
     def _stamp() -> str:
@@ -320,6 +364,8 @@ class ClaudeBrain:
         async for msg in self._client.receive_response():
             self.recorder.feed(msg)
             if isinstance(msg, AssistantMessage):
+                if msg.model and not msg.model.startswith("<"):
+                    self.model_used = msg.model
                 for block in msg.content:
                     if isinstance(block, TextBlock) and block.text.strip():
                         reply = block.text.strip()
@@ -330,7 +376,8 @@ class ClaudeBrain:
                 elif msg.result and not reply:
                     reply = msg.result.strip()
                 log.info("brain turn: %d turns (session total $%.4f)", msg.num_turns, msg.total_cost_usd or 0)
-                self.turn_count = getattr(self, "turn_count", 0) + 1
-                store.put("brain", {"model": self._options.model, "effort": self._options.effort,
-                                    "turns": self.turn_count, "cost_usd": round(msg.total_cost_usd or 0, 4)})
+                self.turn_count += 1
+                self._cost = round(msg.total_cost_usd or 0, 4)
+                self.meter.feed(msg.model_usage, "brain", "Smitty")
+                self._publish()
         return reply
