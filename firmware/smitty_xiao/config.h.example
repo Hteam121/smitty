@@ -1,0 +1,13 @@
+// Copy to config.h and fill in. config.h is git-ignored.
+#pragma once
+#define FW_VERSION     "0.2.0"
+#define WIFI_SSID      "your-wifi-name"
+#define WIFI_PASSWORD  "your-wifi-password"
+#define SERVER_HOST    "your-mac.local"     // the Mac running Smitty: `scutil --get LocalHostName` + ".local", or its IP
+#define SERVER_PORT    8766
+#define SERVER_PATH    "/audio"
+// Clock role must be complementary to the XVF3800 firmware:
+//   respeaker_xvf3800_i2s_slave_v1.0.9_16k.bin  -> I2S_ROLE_MASTER (default)
+//   respeaker_xvf3800_i2s_master_v1.0.9_48k.bin -> I2S_ROLE_SLAVE (and SAMPLE_RATE would be 48000: unsupported)
+#define I2S_ROLE       I2S_ROLE_MASTER
+#define MIC_CHANNEL    0                     // 0 = left slot (processed voice), 1 = right

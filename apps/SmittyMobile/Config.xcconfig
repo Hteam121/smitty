@@ -1,0 +1,10 @@
+// Defaults for both targets. Do not put your own values here: copy Local.xcconfig.example
+// to Local.xcconfig (git-ignored) and set them there.
+
+// Bundle ids become <prefix>.smitty and <prefix>.smitty.watchkitapp.
+SMITTY_BUNDLE_PREFIX = com.example
+
+// Empty is fine for the simulator. A real iPhone or Watch needs your Apple team id.
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

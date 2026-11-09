@@ -1,0 +1,58 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smitty",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "smitty",
+        "run"
+      ],
+      "port": 8770
+    },
+    {
+      "name": "smitty-dashboard-demo",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "smitty",
+        "dashboard",
+        "--demo"
+      ],
+      "port": 8770
+    },
+    {
+      "name": "smitty-dashboard",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "smitty",
+        "dashboard"
+      ],
+      "port": 8770
+    },
+    {
+      "name": "smitty-dashboard-check",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "SMITTY_DASHBOARD_PORT=8771",
+        "uv",
+        "run",
+        "smitty",
+        "dashboard"
+      ],
+      "port": 8771
+    },
+    {
+      "name": "smitty-text-only",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "smitty",
+        "serve"
+      ],
+      "port": 8770
+    }
+  ]
+}

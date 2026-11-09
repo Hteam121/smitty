@@ -1,0 +1,8 @@
+// Copy to Local.xcconfig (git-ignored) and fill in. Needed only for a real iPhone / Watch.
+
+// Any reverse-domain prefix that is yours, e.g. com.yourname
+SMITTY_BUNDLE_PREFIX = com.yourname
+
+// Your 10-character Apple team id (developer.apple.com/account -> Membership details,
+// or Xcode -> Settings -> Accounts). A free personal team works for your own devices.
+DEVELOPMENT_TEAM = ABCDE12345

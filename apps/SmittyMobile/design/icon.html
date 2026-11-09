@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;background:#060D20;width:1024px;height:1024px;overflow:hidden}
+  canvas{display:block}
+</style></head><body>
+<canvas id="c" width="1024" height="1024"></canvas>
+<script>
+// Smitty's icon: the dashboard's particle cloud, frozen mid-swirl, on the navy glass.
+const c = document.getElementById('c'), x = c.getContext('2d'), S = 1024, cx = S/2, cy = S/2;
+let seed = 7;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v); };
+
+// background: deep navy with a soft lift behind the cloud
+let g = x.createLinearGradient(0, 0, S, S);
+g.addColorStop(0, '#0B1737'); g.addColorStop(0.55, '#060D20'); g.addColorStop(1, '#040816');
+x.fillStyle = g; x.fillRect(0, 0, S, S);
+g = x.createRadialGradient(cx, cy - 40, 0, cx, cy, 560);
+g.addColorStop(0, 'rgba(157,180,242,0.22)'); g.addColorStop(0.45, 'rgba(23,48,106,0.25)'); g.addColorStop(1, 'rgba(6,13,32,0)');
+x.fillStyle = g; x.fillRect(0, 0, S, S);
+
+// flow lines, like the dashboard's background
+x.strokeStyle = '#F6ECD9'; x.lineWidth = 3;
+for (let i = 0; i < 9; i++) {
+  x.globalAlpha = 0.05 + (i % 3) * 0.03;
+  x.beginPath();
+  for (let t = 0; t <= S; t += 8) {
+    const y = cy + Math.sin((t / S) * Math.PI * 1.6 + i * 0.9) * (90 + i * 30) + (i - 4) * 96;
+    t ? x.lineTo(t, y) : x.moveTo(t, y);
+  }
+  x.stroke();
+}
+x.globalAlpha = 1;
+
+// the cloud: three soft spiral arms of dust, dense in the middle, thinning out. Big, so it
+// still reads as a glowing swirl at 60 px.
+const TILT = 0.8;
+const N = 16000;
+for (let i = 0; i < N; i++) {
+  const r0 = Math.abs(gauss()) * 250 + rnd() * 40;                  // radius, most within ~300
+  const arm = i % 3;
+  const a = r0 * 0.0075 + arm * 2.094 + gauss() * 0.22 + 0.6;        // arms wind with radius
+  const spread = gauss() * (12 + r0 * 0.09);
+  const px = cx + Math.cos(a) * r0 + Math.cos(a + 1.57) * spread;
+  const py = cy + (Math.sin(a) * r0 + Math.sin(a + 1.57) * spread) * TILT;
+  const d = Math.hypot(px - cx, (py - cy) / TILT);
+  if (d > 470) continue;
+  const size = 1.4 + rnd() * 3.2;
+  const alpha = Math.min(0.55, Math.max(0.06, 0.7 - d / 520)) * (0.45 + rnd() * 0.55);
+  const coral = rnd() < 0.035 && d > 140;                           // coral dust only at the edges
+  x.fillStyle = coral ? `rgba(255,122,102,${alpha * 1.1})`
+              : rnd() < 0.2 ? `rgba(157,180,242,${alpha})` : `rgba(246,236,217,${alpha})`;
+  x.beginPath(); x.arc(px, py, size, 0, Math.PI * 2); x.fill();
+}
+// warm core glow and a wide halo
+g = x.createRadialGradient(cx, cy, 0, cx, cy, 330);
+g.addColorStop(0, 'rgba(246,236,217,0.62)'); g.addColorStop(0.18, 'rgba(246,236,217,0.30)');
+g.addColorStop(0.5, 'rgba(157,180,242,0.10)'); g.addColorStop(1, 'rgba(157,180,242,0)');
+x.fillStyle = g; x.beginPath(); x.ellipse(cx, cy, 330, 330 * TILT, 0, 0, Math.PI * 2); x.fill();
+// bright motes
+x.globalCompositeOperation = 'lighter';
+for (let i = 0; i < 70; i++) {
+  const r = Math.abs(gauss()) * 260 + 60, a = rnd() * Math.PI * 2;
+  const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r * TILT;
+  const s = 2.5 + rnd() * 5;
+  g = x.createRadialGradient(px, py, 0, px, py, s * 3);
+  g.addColorStop(0, 'rgba(246,236,217,0.95)'); g.addColorStop(0.3, 'rgba(246,236,217,0.5)'); g.addColorStop(1, 'rgba(246,236,217,0)');
+  x.fillStyle = g; x.beginPath(); x.arc(px, py, s * 3, 0, Math.PI * 2); x.fill();
+}
+// one coral spark: the "needs attention" accent, off-centre on the upper arm
+const sx = cx + 300, sy = cy - 205;
+g = x.createRadialGradient(sx, sy, 0, sx, sy, 80);
+g.addColorStop(0, 'rgba(255,122,102,1)'); g.addColorStop(0.18, 'rgba(255,122,102,0.75)'); g.addColorStop(0.5, 'rgba(255,122,102,0.18)'); g.addColorStop(1, 'rgba(255,122,102,0)');
+x.fillStyle = g; x.beginPath(); x.arc(sx, sy, 80, 0, Math.PI * 2); x.fill();
+x.globalCompositeOperation = 'source-over';
+
+// glass highlight across the top, like the cards
+g = x.createLinearGradient(0, 0, 0, S * 0.5);
+g.addColorStop(0, 'rgba(246,236,217,0.10)'); g.addColorStop(1, 'rgba(246,236,217,0)');
+x.fillStyle = g; x.fillRect(0, 0, S, S * 0.5);
+document.title = 'ready';
+</script>
+</body></html>

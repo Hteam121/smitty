@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local settings and secrets (copy the .example files)
+.env
+firmware/smitty_xiao/config.h
+apps/SmittyMobile/Local.xcconfig
+.claude/settings.local.json
+
+# Downloaded weights and wake word training data. Only the trained "hey smitty" model is kept.
+models/*
+!models/hey_smitty.onnx
+
+# Seeed's XVF3800 firmware images: download them, see firmware/README.md
+firmware/xvf3800/*.bin
+
+# Recordings, raw demo captures, macOS noise
+*.wav
+docs/demo/
+.DS_Store
